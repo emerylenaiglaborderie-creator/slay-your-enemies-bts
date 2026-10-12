@@ -1,0 +1,36 @@
+/*
+ * Design tokens. Thème sombre par défaut (classe `dark` sur <html>).
+ * Pour ajouter le thème clair plus tard : redéfinir ces variables sous `:root.light`.
+ * Règle de contraste : `accent` pour les fonds (texte blanc) et les éléments
+ * non textuels ; `accent-soft` pour le texte et les petites icônes d'accent.
+ */
+:root {
+  --color-bg: #14101f;
+  --color-surface: #1e1830;
+  --color-surface-2: #2a2142;
+  --color-border: #3a2f5c;
+  --color-ink: #ede7f6;
+  --color-ink-muted: #b3a6d1;
+
+  --color-accent: #7e57c2;
+  --color-accent-strong: #5e35b1;
+  --color-accent-soft: #b39ddb;
+  --color-accent-ink: #ffffff;
+
+  --color-xp: #ffb74d;
+  --color-success: #7bc47f;
+  --color-warning: #ffb74d;
+  --color-danger: #e0707a;
+
+  /* Contour pixel, comme celui des sprites. */
+  --color-outline: #000000;
+
+  /* Fonds teintés dérivés de la palette, pour les états (sélection, bon, faux). */
+  --color-accent-tint: color-mix(in oklab, var(--color-accent) 35%, var(--color-surface));
+  --color-success-tint: color-mix(in oklab, var(--color-success) 22%, var(--color-surface));
+  --color-warning-tint: color-mix(in oklab, var(--color-warning) 22%, var(--color-surface));
+  --color-danger-tint: color-mix(in oklab, var(--color-danger) 22%, var(--color-surface));
+
+  --color-focus: var(--color-accent-soft);
+  color-scheme: dark;
+}

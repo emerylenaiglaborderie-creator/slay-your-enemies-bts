@@ -1,0 +1,249 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-border: var(--color-border);
+  --color-ink: var(--color-ink);
+  --color-ink-muted: var(--color-ink-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-strong: var(--color-accent-strong);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-ink: var(--color-accent-ink);
+  --color-accent-tint: var(--color-accent-tint);
+  --color-xp: var(--color-xp);
+  --color-success: var(--color-success);
+  --color-success-tint: var(--color-success-tint);
+  --color-warning: var(--color-warning);
+  --color-warning-tint: var(--color-warning-tint);
+  --color-danger: var(--color-danger);
+  --color-danger-tint: var(--color-danger-tint);
+  --color-outline: var(--color-outline);
+  --color-focus: var(--color-focus);
+}
+
+@theme {
+  --font-pixel: 'Pixelify Sans', ui-monospace, monospace;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Grille de 8 px : p-1 = 8px, p-2 = 16px... */
+  --spacing: 8px;
+  /* Pixel art : aucun arrondi. */
+  --radius-pixel: 0;
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+  }
+  /* Rendu net des sprites et icônes pixel agrandis. */
+  img.pixelated {
+    image-rendering: pixelated;
+  }
+  body {
+    @apply bg-bg font-body text-ink antialiased;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-pixel;
+  }
+  /* La police pixel dessine mal la ligature "fi". */
+  h1,
+  h2,
+  h3,
+  .font-pixel {
+    font-variant-ligatures: none;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    /* Au-delà du cadre pixel (dessiné hors de la boîte). */
+    outline-offset: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes bounce-pixel {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes xp-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.8);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -32px) scale(1);
+  }
+}
+
+/* Retournement de flashcard */
+.flip {
+  perspective: 1200px;
+}
+.flip-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 450ms cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+.flip-inner[data-flipped='true'] {
+  transform: rotateY(180deg);
+}
+.flip-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+}
+.flip-back {
+  transform: rotateY(180deg);
+}
+
+/* Contenu des cours */
+.markdown {
+  max-width: 70ch;
+}
+.markdown > * + * {
+  margin-top: 12px;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  font-family: var(--font-pixel);
+  line-height: 1.25;
+  margin-top: 24px;
+}
+.markdown h1 {
+  font-size: 1.6rem;
+}
+.markdown h2 {
+  font-size: 1.35rem;
+}
+.markdown h3 {
+  font-size: 1.15rem;
+}
+.markdown ul {
+  list-style: square;
+  padding-left: 24px;
+}
+.markdown ol {
+  list-style: decimal;
+  padding-left: 24px;
+}
+.markdown a {
+  color: var(--color-accent-soft);
+  text-decoration: underline;
+}
+.markdown code {
+  background: var(--color-surface-2);
+  padding: 0 4px;
+  font-size: 0.9em;
+}
+.markdown pre {
+  background: var(--color-surface-2);
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.markdown pre code {
+  padding: 0;
+}
+.markdown blockquote {
+  border-left: 4px solid var(--color-border);
+  padding-left: 16px;
+  color: var(--color-ink-muted);
+}
+.markdown table {
+  border-collapse: collapse;
+}
+.markdown th,
+.markdown td {
+  border: 2px solid var(--color-border);
+  padding: 4px 8px;
+}
+
+/*
+ * Cadre pixel commun à toute l'app : bordure aux coins crantés dessinée en
+ * box-shadow (elle ne prend pas de place, prévoir un écart d'au moins
+ * 2 x --px entre éléments) et ombre portée noire comme le contour des sprites.
+ *   .px-box     cadre de 2 px (contrôles, badges)
+ *   .px-box-lg  cadre de 4 px (cartes, panneaux)
+ *   .px-flat    sans ombre portée
+ * Variables : --frame (couleur du cadre), --drop-color (ombre).
+ * Le fond se règle avec les classes bg-* habituelles.
+ */
+@layer components {
+  .px-box {
+    --px: 2px;
+    --frame: var(--color-border);
+    --drop-color: var(--color-outline);
+    background-color: var(--color-surface);
+    box-shadow:
+      0 calc(-1 * var(--px)) 0 0 var(--frame),
+      0 var(--px) 0 0 var(--frame),
+      calc(-1 * var(--px)) 0 0 0 var(--frame),
+      var(--px) 0 0 0 var(--frame),
+      0 calc(2 * var(--px)) 0 0 var(--drop-color);
+  }
+  .px-box-lg {
+    --px: 4px;
+  }
+  .px-flat {
+    --drop-color: transparent;
+  }
+
+  /* Case de cours : tranche de livre à la couleur de la matière, soulevée au survol. */
+  .course-tile {
+    --subject: var(--color-accent-soft);
+    position: relative;
+    padding-left: 20px;
+    transition: transform 120ms steps(2);
+  }
+  .course-tile::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 8px;
+    background: var(--subject);
+    box-shadow: 4px 0 0 0 var(--color-outline);
+  }
+  .course-tile:hover,
+  .course-tile:focus-visible {
+    --frame: var(--subject);
+    transform: translateY(-4px);
+    outline: none;
+  }
+}
