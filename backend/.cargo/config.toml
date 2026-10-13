@@ -1,0 +1,5 @@
+# Sur Mac Apple Silicon, utiliser l'éditeur de liens d'Apple : un `cc` installé par Nix
+# ou Homebrew passe parfois devant dans le PATH et ne trouve pas libiconv.
+# Sans effet sur Linux, Windows ou un Mac Intel.
+[target.aarch64-apple-darwin]
+linker = "/usr/bin/cc"

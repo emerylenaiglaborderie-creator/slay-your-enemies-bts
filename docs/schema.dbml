@@ -1,0 +1,169 @@
+// Schéma complet de la base, à coller dans https://dbdiagram.io pour régénérer le livrable PDF.
+// Source de vérité : backend/migrations/. Les tables du bas (classes à xp_events) viennent de la migration 0002.
+
+Enum user_role {
+  student
+  trainer
+}
+
+Enum difficulty_level {
+  easy
+  medium
+  hard
+}
+
+Enum question_type {
+  mcq
+  true_false
+  free_text
+}
+
+Enum challenge_status {
+  pending
+  accepted
+  declined
+  completed
+}
+
+Enum evaluation_type {
+  controle
+  examen
+  projet
+}
+
+Table users {
+  id uuid [pk]
+  email text [not null, unique]
+  password_hash text [not null]
+  display_name text [not null]
+  role user_role [not null]
+  created_at timestamptz [not null]
+}
+
+Table quizzes {
+  id uuid [pk]
+  author_id uuid [not null, ref: > users.id]
+  title text [not null]
+  description text
+  theme text [not null]
+  difficulty difficulty_level [not null]
+  seconds_per_question int [not null]
+  is_published boolean [not null]
+  created_at timestamptz [not null]
+}
+
+Table questions {
+  id uuid [pk]
+  quiz_id uuid [not null, ref: > quizzes.id]
+  type question_type [not null]
+  statement text [not null]
+  explanation text
+  image_url text
+  points int [not null]
+  position int [not null]
+
+  indexes {
+    (quiz_id, position) [unique]
+  }
+}
+
+Table answers {
+  id uuid [pk]
+  question_id uuid [not null, ref: > questions.id]
+  label text [not null]
+  is_correct boolean
+}
+
+Table challenges {
+  id uuid [pk]
+  quiz_id uuid [not null, ref: > quizzes.id]
+  challenger_id uuid [not null, ref: > users.id]
+  challenged_id uuid [not null, ref: > users.id]
+  status challenge_status [not null]
+  created_at timestamptz [not null]
+}
+
+Table attempts {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  quiz_id uuid [not null, ref: > quizzes.id]
+  challenge_id uuid [ref: > challenges.id]
+  started_at timestamptz [not null]
+  finished_at timestamptz
+  score int
+  total_time_ms int
+}
+
+Table attempt_answers {
+  id uuid [pk]
+  attempt_id uuid [not null, ref: > attempts.id]
+  question_id uuid [not null, ref: > questions.id]
+  answer_id uuid [ref: > answers.id]
+  free_text text
+  is_correct boolean
+  time_ms int [not null]
+
+  indexes {
+    (attempt_id, question_id) [unique]
+  }
+}
+
+Table classes {
+  id uuid [pk]
+  trainer_id uuid [not null, ref: > users.id]
+  name text [not null]
+  join_code text [not null, unique]
+  created_at timestamptz [not null]
+}
+
+Table class_members {
+  class_id uuid [ref: > classes.id]
+  student_id uuid [ref: > users.id]
+  joined_at timestamptz [not null]
+
+  indexes {
+    (class_id, student_id) [pk]
+  }
+}
+
+Table evaluations {
+  id uuid [pk]
+  class_id uuid [not null, ref: > classes.id]
+  title text [not null]
+  type evaluation_type [not null]
+  theme text
+  date date [not null]
+  created_at timestamptz [not null]
+}
+
+Table grades {
+  id uuid [pk]
+  class_id uuid [not null, ref: > classes.id]
+  student_id uuid [not null, ref: > users.id]
+  evaluation_id uuid [ref: > evaluations.id]
+  subject text [not null]
+  value float [not null]
+  max float [not null]
+  coef float [not null]
+  graded_on date [not null]
+  created_at timestamptz [not null]
+}
+
+Table pets {
+  user_id uuid [pk, ref: - users.id]
+  name text [not null]
+  xp int [not null]
+  level int [not null]
+  streak int [not null]
+  last_active_day date
+  xp_on_last_active_day int [not null]
+}
+
+Table xp_events {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  amount int [not null]
+  reason text [not null, note: 'quiz, challenge_won ou good_grade']
+  ref_id uuid
+  created_at timestamptz [not null]
+}

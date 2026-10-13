@@ -1,0 +1,9 @@
+pub mod attempts;
+pub mod auth;
+pub mod challenges;
+pub mod classes;
+pub mod evaluations;
+pub mod grades;
+pub mod leaderboard;
+pub mod pet;
+pub mod quizzes;
