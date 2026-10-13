@@ -4,6 +4,7 @@ Projet scolaire, scénario TechLearn Solutions (CDD-QUIZ-2026-001), réalisé en
 
 - Cahier des charges : [docs/CAHIER_DES_CHARGES.md](docs/CAHIER_DES_CHARGES.md)
 - Suivi du cahier des charges et de la roadmap : [docs/ALIGNEMENT.md](docs/ALIGNEMENT.md)
+- Documentation technique (choix et fonctionnement) : [docs/DOCUMENTATION_TECHNIQUE.md](docs/DOCUMENTATION_TECHNIQUE.md)
 - Documentation de l'API : [docs/API.md](docs/API.md)
 
 | Dossier | Stack |
