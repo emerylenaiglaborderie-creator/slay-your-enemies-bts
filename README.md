@@ -2,6 +2,7 @@
 
 Projet scolaire, scénario TechLearn Solutions (CDD-QUIZ-2026-001), réalisé en binôme à partir de l'app perso « Slay your enemies ».
 
+- Environnement à installer (Rust, Node, Docker…) : [docs/ENVIRONNEMENT.md](docs/ENVIRONNEMENT.md)
 - Cahier des charges : [docs/CAHIER_DES_CHARGES.md](docs/CAHIER_DES_CHARGES.md)
 - Suivi du cahier des charges et de la roadmap : [docs/ALIGNEMENT.md](docs/ALIGNEMENT.md)
 - Documentation technique (choix et fonctionnement) : [docs/DOCUMENTATION_TECHNIQUE.md](docs/DOCUMENTATION_TECHNIQUE.md)
@@ -14,6 +15,8 @@ Projet scolaire, scénario TechLearn Solutions (CDD-QUIZ-2026-001), réalisé en
 | `mobile/` | React Native + TypeScript (à venir) |
 
 ## Lancer en local
+
+Prérequis : Rust 1.88+, Node.js 22.12+, Docker Desktop. Détail : [docs/ENVIRONNEMENT.md](docs/ENVIRONNEMENT.md).
 
 Guide détaillé (arrêt, remise à zéro, problèmes courants) : [docs/LANCER_EN_LOCAL.md](docs/LANCER_EN_LOCAL.md).
 

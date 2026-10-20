@@ -12,9 +12,11 @@ Toutes les commandes partent de la racine du dépôt (`SLAYyourENEMIES-BTS/`).
 
 ## Prérequis (une seule fois)
 
+Détail des versions et de l'installation selon le système : [ENVIRONNEMENT.md](ENVIRONNEMENT.md).
+
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/), lancé avant de démarrer la base
-- [Rust](https://rustup.rs) (`cargo --version` doit répondre)
-- [Node.js](https://nodejs.org) 20 ou plus (`node --version`)
+- [Rust](https://rustup.rs) 1.88 ou plus (`cargo --version` doit répondre)
+- [Node.js](https://nodejs.org) 22.12 ou plus (`node --version`)
 - `jq`, seulement pour le script de test : `brew install jq`
 
 ## Première installation
