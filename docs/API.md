@@ -116,6 +116,8 @@ Le défi passe automatiquement à `completed` quand les deux participants ont te
 | POST | `/classes/{id}/grades` **F** | Saisie groupée, voir ci-dessous → `[{ id, student_id, outcome: bonus\|recovery\|saved, xp_bonus }]` |
 | GET | `/classes/{id}/grades` **F** | Notes de la classe, avec nom de l'élève et de l'évaluation |
 | DELETE | `/grades/{id}` **F** | L'XP déjà gagnée reste acquise |
+| PUT | `/grades/{id}/recovery-goal` **F** | Corps `{ "target": 8 }` → 204. Définit ou remplace l'objectif du plan ouvert par cette note. 400 si `target <= 0` ou si la note n'est pas sous 10/20 |
+| DELETE | `/grades/{id}/recovery-goal` **F** | Retire l'objectif → 204 |
 | GET | `/me/grades` | Élève : `{ grades, average (sur 20, pondérée), recovery_plans }` |
 
 ```json
@@ -125,11 +127,13 @@ Le défi passe automatiquement à `completed` quand les deux participants ont te
   "max": 20,
   "coef": 2,
   "graded_on": "2026-10-13",
-  "entries": [{ "student_id": "…", "value": 15.5 }, { "student_id": "…", "value": 8 }]
+  "entries": [{ "student_id": "…", "value": 15.5 }, { "student_id": "…", "value": 8, "recovery_target": 8 }]
 }
 ```
 
 `subject` est facultatif si `evaluation_id` est donné (le thème, sinon le titre, de l'évaluation est repris). Il est comparé au thème des quiz pour les plans de rattrapage. Règles : note entre 0 et `max`, date pas dans le futur, élève membre de la classe. Une note d'au moins 14/20 datée de moins de 14 jours donne +20 XP (`bonus`) ; une note sous 10/20 ouvre un plan de rattrapage de 14 jours (`recovery`).
+
+`recovery_target` (facultatif, par élève) : objectif du plan de rattrapage, en nombre de bonnes réponses. Entier strictement positif, accepté seulement sur une note sous 10/20 ; sinon 400 et aucune note du lot n'est enregistrée. Chaque plan de `recovery_plans` (`/me/grades`, `/me/pet`, tableau de bord) vaut `{ subject, until, target }`, `target` étant l'objectif de la dernière mauvaise note de la matière, ou `null`. L'objectif est informatif : il ne change pas l'XP.
 
 ## Dragon (élèves)
 
