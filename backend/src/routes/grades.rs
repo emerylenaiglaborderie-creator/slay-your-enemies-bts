@@ -69,10 +69,24 @@ struct Entry {
     /// Objectif du plan de rattrapage (bonnes réponses à obtenir), seulement pour une mauvaise note.
     /// Absent du JSON : `None`, les clients existants ne sont pas concernés.
     recovery_target: Option<i32>,
+    /// Durée du plan en jours (sinon `xp::RECOVERY_DAYS`), seulement pour une mauvaise note.
+    recovery_days: Option<i32>,
 }
 
 const INVALID_TARGET: &str = "l'objectif doit être supérieur à 0";
-const TARGET_WITHOUT_PLAN: &str = "l'objectif n'a de sens que pour une note qui ouvre un plan";
+const GOAL_WITHOUT_PLAN: &str = "l'objectif et la durée n'ont de sens que pour une note qui ouvre un plan";
+
+/// Valeurs de l'objectif et de la durée, contrôlées avant toute écriture. La base les garantit aussi
+/// (CHECK de `recovery_goals`), mais n'y renverrait qu'une erreur interne au lieu d'un message clair.
+fn check_goal(target: Option<i32>, days: Option<i32>) -> AppResult<()> {
+    if target.is_some_and(|t| t <= 0) {
+        return Err(AppError::BadRequest(INVALID_TARGET.into()));
+    }
+    if days.is_some_and(|d| !(1..=xp::RECOVERY_MAX_DAYS).contains(&d)) {
+        return Err(AppError::BadRequest(format!("la durée doit être comprise entre 1 et {} jours", xp::RECOVERY_MAX_DAYS)));
+    }
+    Ok(())
+}
 
 #[derive(Deserialize)]
 struct GradesBody {
@@ -130,14 +144,11 @@ async fn create_grades(
     if let Some(e) = body.entries.iter().find(|e| !(0.0..=body.max).contains(&e.value)) {
         return Err(AppError::BadRequest(format!("note {} hors barème (0 à {})", e.value, body.max)));
     }
-    // Contrôlés avant toute écriture ; la base garantit aussi `target > 0` (CHECK de `recovery_goals`).
     for e in &body.entries {
-        match e.recovery_target {
-            Some(t) if t <= 0 => return Err(AppError::BadRequest(INVALID_TARGET.into())),
-            Some(_) if xp::grade_level(e.value, body.max) != GradeLevel::Bad => {
-                return Err(AppError::BadRequest(TARGET_WITHOUT_PLAN.into()))
-            }
-            _ => {}
+        check_goal(e.recovery_target, e.recovery_days)?;
+        let has_goal = e.recovery_target.is_some() || e.recovery_days.is_some();
+        if has_goal && xp::grade_level(e.value, body.max) != GradeLevel::Bad {
+            return Err(AppError::BadRequest(GOAL_WITHOUT_PLAN.into()));
         }
     }
 
@@ -194,10 +205,11 @@ async fn create_grades(
         .bind(body.graded_on)
         .fetch_one(&mut *tx)
         .await?;
-        if let Some(target) = entry.recovery_target {
-            sqlx::query("INSERT INTO recovery_goals (grade_id, target) VALUES ($1, $2)")
+        if entry.recovery_target.is_some() || entry.recovery_days.is_some() {
+            sqlx::query("INSERT INTO recovery_goals (grade_id, target, days) VALUES ($1, $2, $3)")
                 .bind(id)
-                .bind(target)
+                .bind(entry.recovery_target)
+                .bind(entry.recovery_days)
                 .execute(&mut *tx)
                 .await?;
         }
@@ -228,21 +240,24 @@ async fn delete_grade(State(state): State<AppState>, auth: AuthUser, Path(id): P
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Chacun facultatif, au moins l'un des deux. Une valeur absente est effacée (le PUT remplace tout).
 #[derive(Deserialize)]
 struct GoalBody {
-    target: i32,
+    target: Option<i32>,
+    days: Option<i32>,
 }
 
-/// Définit ou remplace l'objectif du plan de rattrapage ouvert par une note.
+/// Définit ou remplace l'objectif et la durée du plan de rattrapage ouvert par une note.
 async fn set_recovery_goal(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<GoalBody>,
 ) -> AppResult<StatusCode> {
-    if body.target <= 0 {
-        return Err(AppError::BadRequest(INVALID_TARGET.into()));
+    if body.target.is_none() && body.days.is_none() {
+        return Err(AppError::BadRequest("objectif ou durée requis".into()));
     }
+    check_goal(body.target, body.days)?;
     let (class_id, value, max): (Uuid, f64, f64) = sqlx::query_as("SELECT class_id, value, max FROM grades WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.db)
@@ -250,20 +265,21 @@ async fn set_recovery_goal(
         .ok_or(AppError::NotFound)?;
     owned_class(&state, &auth, class_id).await?;
     if xp::grade_level(value, max) != GradeLevel::Bad {
-        return Err(AppError::BadRequest(TARGET_WITHOUT_PLAN.into()));
+        return Err(AppError::BadRequest(GOAL_WITHOUT_PLAN.into()));
     }
     sqlx::query(
-        "INSERT INTO recovery_goals (grade_id, target) VALUES ($1, $2)
-         ON CONFLICT (grade_id) DO UPDATE SET target = EXCLUDED.target",
+        "INSERT INTO recovery_goals (grade_id, target, days) VALUES ($1, $2, $3)
+         ON CONFLICT (grade_id) DO UPDATE SET target = EXCLUDED.target, days = EXCLUDED.days",
     )
     .bind(id)
     .bind(body.target)
+    .bind(body.days)
     .execute(&state.db)
     .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Retire l'objectif d'une note : le plan redevient un plan sans objectif.
+/// Retire l'objectif et la durée d'une note : le plan redevient un plan de 14 jours sans objectif.
 async fn delete_recovery_goal(State(state): State<AppState>, auth: AuthUser, Path(id): Path<Uuid>) -> AppResult<StatusCode> {
     let class_id: Uuid = sqlx::query_scalar("SELECT class_id FROM grades WHERE id = $1")
         .bind(id)
