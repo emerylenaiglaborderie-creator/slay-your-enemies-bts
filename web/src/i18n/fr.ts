@@ -217,6 +217,7 @@ export const fr = {
     recoveryText: (subject: string, perAnswer: number, max: number) =>
       `Les quiz de thème « ${subject} » rapportent +${perAnswer} XP par bonne réponse (jusqu’à +${max} par quiz).`,
     recoveryUntil: (date: string) => `Jusqu’au ${date}`,
+    recoveryGoal: (n: number) => `Objectif : ${plural(n, 'bonne réponse', 'bonnes réponses')}`,
     outcome: { bonus: 'Bonus XP', recovery: 'Rattrapage', saved: '' } satisfies Record<GradeOutcome, string>,
   },
   pet: {
@@ -256,6 +257,7 @@ export const fr = {
     inactive: (days: number | null) => (days === null ? 'Jamais actif' : `Inactif depuis ${days} jours`),
     noAverage: 'Pas encore de note',
     recovery: (subject: string) => `Rattrapage ${subject}`,
+    recoveryGoal: (n: number) => `objectif : ${plural(n, 'bonne réponse', 'bonnes réponses')}`,
     sort: 'Trier par',
     sorts: { name: 'Nom', level: 'Niveau', average: 'Moyenne', activity: 'Activité' },
   },

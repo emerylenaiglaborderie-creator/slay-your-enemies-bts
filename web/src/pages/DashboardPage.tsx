@@ -100,6 +100,7 @@ function StudentTile({ student: s }: { student: StudentCard }) {
         {s.recovery_plans.map((p) => (
           <span key={p.subject} className="px-box px-flat self-start px-1 text-xs font-semibold text-xp [--frame:var(--color-xp)]">
             {t.dashboard.recovery(p.subject)}
+            {p.target !== null && ` · ${t.dashboard.recoveryGoal(p.target)}`}
           </span>
         ))}
       </div>
