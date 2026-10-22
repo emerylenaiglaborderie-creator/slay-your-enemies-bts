@@ -182,12 +182,16 @@ pub struct GradeRef<'a> {
     pub value: f64,
     pub max: f64,
     pub graded_on: NaiveDate,
+    /// Objectif fixé par le formateur sur cette note (table `recovery_goals`).
+    pub target: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecoveryPlan {
     pub subject: String,
     pub until: NaiveDate,
+    /// Bonnes réponses à obtenir, repris de la note qui ouvre le plan. Informatif : sans effet sur l'XP.
+    pub target: Option<i32>,
 }
 
 fn same_subject(a: &str, b: &str) -> bool {
@@ -196,6 +200,8 @@ fn same_subject(a: &str, b: &str) -> bool {
 
 /// Plans de rattrapage en cours : la dernière mauvaise note d'une matière ouvre un plan
 /// pendant `RECOVERY_DAYS` jours ; seule une note correcte d'un jour postérieur le ferme.
+/// L'objectif du plan est celui de cette dernière mauvaise note. À date égale, la dernière
+/// de la liste l'emporte : les appelants trient donc les notes par date puis par saisie.
 pub fn active_recovery_plans(grades: &[GradeRef], today: NaiveDate) -> Vec<RecoveryPlan> {
     let mut subjects: Vec<&str> = Vec::new();
     for g in grades {
@@ -207,14 +213,14 @@ pub fn active_recovery_plans(grades: &[GradeRef], today: NaiveDate) -> Vec<Recov
         .into_iter()
         .filter_map(|subject| {
             let list: Vec<&GradeRef> = grades.iter().filter(|g| same_subject(g.subject, subject)).collect();
-            let last_bad = list
+            let last_bad_grade = list
                 .iter()
                 .filter(|g| grade_level(g.value, g.max) == GradeLevel::Bad)
-                .map(|g| g.graded_on)
-                .max()?;
+                .max_by_key(|g| g.graded_on)?;
+            let last_bad = last_bad_grade.graded_on;
             let recovered = list.iter().any(|g| grade_level(g.value, g.max) != GradeLevel::Bad && g.graded_on > last_bad);
             let until = last_bad + chrono::Duration::days(RECOVERY_DAYS);
-            (!recovered && until > today).then(|| RecoveryPlan { subject: subject.trim().to_string(), until })
+            (!recovered && until > today).then(|| RecoveryPlan { subject: subject.trim().to_string(), until, target: last_bad_grade.target })
         })
         .collect();
     plans.sort_by_key(|p| p.until);
@@ -310,13 +316,39 @@ mod tests {
     #[test]
     fn plans_de_rattrapage() {
         let grades = [
-            GradeRef { subject: "Réseau", value: 7.0, max: 20.0, graded_on: day(1) },
-            GradeRef { subject: "SQL", value: 4.0, max: 20.0, graded_on: day(2) },
-            GradeRef { subject: "sql", value: 12.0, max: 20.0, graded_on: day(3) },
+            GradeRef { subject: "Réseau", value: 7.0, max: 20.0, graded_on: day(1), target: None },
+            GradeRef { subject: "SQL", value: 4.0, max: 20.0, graded_on: day(2), target: None },
+            GradeRef { subject: "sql", value: 12.0, max: 20.0, graded_on: day(3), target: None },
         ];
         let plans = active_recovery_plans(&grades, day(10));
-        assert_eq!(plans, vec![RecoveryPlan { subject: "Réseau".into(), until: day(15) }]);
+        assert_eq!(plans, vec![RecoveryPlan { subject: "Réseau".into(), until: day(15), target: None }]);
         assert!(theme_in_recovery(" réseau ", &plans));
         assert!(active_recovery_plans(&grades, day(15)).is_empty());
+    }
+
+    #[test]
+    fn plan_avec_objectif() {
+        let grades = [GradeRef { subject: "Réseau", value: 7.0, max: 20.0, graded_on: day(1), target: Some(8) }];
+        let plans = active_recovery_plans(&grades, day(10));
+        assert_eq!(plans, vec![RecoveryPlan { subject: "Réseau".into(), until: day(15), target: Some(8) }]);
+    }
+
+    #[test]
+    fn plan_sans_objectif() {
+        let grades = [GradeRef { subject: "Réseau", value: 7.0, max: 20.0, graded_on: day(1), target: None }];
+        let plans = active_recovery_plans(&grades, day(10));
+        assert_eq!(plans, vec![RecoveryPlan { subject: "Réseau".into(), until: day(15), target: None }]);
+    }
+
+    #[test]
+    fn objectif_de_la_derniere_mauvaise_note() {
+        let grades = [
+            GradeRef { subject: "Réseau", value: 7.0, max: 20.0, graded_on: day(3), target: Some(5) },
+            GradeRef { subject: "réseau", value: 4.0, max: 20.0, graded_on: day(1), target: Some(12) },
+            GradeRef { subject: "Réseau", value: 6.0, max: 20.0, graded_on: day(3), target: Some(8) },
+        ];
+        let plans = active_recovery_plans(&grades, day(10));
+        // La plus récente gagne ; à date égale, la dernière saisie (dernière de la liste).
+        assert_eq!(plans, vec![RecoveryPlan { subject: "Réseau".into(), until: day(17), target: Some(8) }]);
     }
 }
