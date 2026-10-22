@@ -27,7 +27,19 @@ type Column = {
   grades: Map<string, Grade>
 }
 
-type Draft = { key: string; title: string; evaluationId?: string; subject: string; max: string; coef: string; date: string; locked: boolean; values: Record<string, string> }
+type Draft = {
+  key: string
+  title: string
+  evaluationId?: string
+  subject: string
+  max: string
+  coef: string
+  date: string
+  locked: boolean
+  values: Record<string, string>
+  /** élève → objectif de rattrapage saisi */
+  targets: Record<string, string>
+}
 
 const on20 = (g: Pick<Grade, 'value' | 'max'>) => (g.value / g.max) * 20
 
@@ -37,6 +49,13 @@ function parseNumber(value: string): number | null {
   if (!normalized) return null
   const n = Number(normalized)
   return Number.isFinite(n) ? n : null
+}
+
+/** Vrai si la note saisie ouvre un plan de rattrapage : seule une telle note accepte un objectif. */
+function opensRecovery(value: string, max: string): boolean {
+  const v = parseNumber(value)
+  const m = parseNumber(max)
+  return v !== null && m !== null && m > 0 && on20({ value: v, max: m }) < BAD
 }
 
 /** Colonnes du carnet : évaluations passées (même sans note) et notes hors évaluation, par date. */
@@ -106,22 +125,35 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
       date: column.evaluationId ? (column.date <= todayIso() ? column.date : todayIso()) : column.date,
       locked: column.grades.size > 0,
       values: {},
+      targets: {},
     })
   }
 
   function startFree() {
     setNotice(undefined)
     setError(undefined)
-    setDraft({ key: 'new', title: t.grades.newFree, subject: '', max: '20', coef: '1', date: todayIso(), locked: false, values: {} })
+    setDraft({ key: 'new', title: t.grades.newFree, subject: '', max: '20', coef: '1', date: todayIso(), locked: false, values: {}, targets: {} })
   }
 
   async function save() {
     if (!draft) return
     setError(undefined)
-    const entries = detail.members.flatMap((m) => {
+    const entries: { student_id: string; value: number; recovery_target?: number }[] = []
+    for (const m of detail.members) {
       const value = parseNumber(draft.values[m.id] ?? '')
-      return value === null ? [] : [{ student_id: m.id, value }]
-    })
+      if (value === null) continue
+      const rawTarget = (draft.targets[m.id] ?? '').trim()
+      if (!rawTarget || !opensRecovery(draft.values[m.id] ?? '', draft.max)) {
+        entries.push({ student_id: m.id, value })
+        continue
+      }
+      const target = Number(rawTarget)
+      if (!Number.isInteger(target) || target <= 0) {
+        setError(t.grades.invalidTarget)
+        return
+      }
+      entries.push({ student_id: m.id, value, recovery_target: target })
+    }
     try {
       const created = await api<CreatedGrade[]>('POST', `/classes/${detail.id}/grades`, {
         evaluation_id: draft.evaluationId,
@@ -189,6 +221,7 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
           </div>
           {draft.locked && <p className="text-sm text-ink-muted">{t.grades.lockedScale}</p>}
           <p className="text-sm text-ink-muted">{t.grades.emptyValueHint}</p>
+          <p className="text-sm text-ink-muted">{t.grades.targetHint}</p>
           <ErrorText>{error}</ErrorText>
           <div className="flex gap-1">
             <Button variant="primary" onClick={() => void save()}>
@@ -252,13 +285,22 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
                               {active && <IconButton icon="trash" label={t.grades.deleteGrade(m.display_name)} danger onClick={() => void removeGrade(grade)} />}
                             </span>
                           ) : active && draft ? (
-                            <div className="mx-auto w-8">
+                            <div className="mx-auto flex w-8 flex-col gap-0.5">
                               <input
                                 aria-label={`${m.display_name} : ${draft.title}`}
                                 inputMode="decimal"
                                 className={`${inputClass} text-center tabular-nums`}
                                 value={draft.values[m.id] ?? ''}
                                 onChange={(e) => setDraft({ ...draft, values: { ...draft.values, [m.id]: e.target.value } })}
+                              />
+                              <input
+                                aria-label={t.grades.targetLabel(m.display_name)}
+                                placeholder={t.grades.targetPlaceholder}
+                                inputMode="numeric"
+                                className={`${inputClass} text-center text-xs tabular-nums disabled:opacity-40`}
+                                disabled={!opensRecovery(draft.values[m.id] ?? '', draft.max)}
+                                value={draft.targets[m.id] ?? ''}
+                                onChange={(e) => setDraft({ ...draft, targets: { ...draft.targets, [m.id]: e.target.value } })}
                               />
                             </div>
                           ) : (

@@ -186,6 +186,10 @@ export const fr = {
     date: 'Date',
     value: 'Note',
     emptyValueHint: 'Laisse vide pour ne pas noter un élève.',
+    targetHint: 'Sous une note inférieure à 10/20, tu peux fixer un objectif de rattrapage : le nombre de bonnes réponses attendues (facultatif).',
+    targetLabel: (name: string) => `Objectif de rattrapage de ${name}`,
+    targetPlaceholder: 'obj.',
+    invalidTarget: 'L’objectif doit être un nombre entier supérieur à 0.',
     saveAll: 'Enregistrer les notes',
     saved: (n: number) => `${plural(n, 'note enregistrée', 'notes enregistrées')}.`,
     outcomes: (bonus: number, recovery: number) =>
