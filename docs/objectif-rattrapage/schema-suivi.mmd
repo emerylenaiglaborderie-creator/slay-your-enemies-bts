@@ -1,0 +1,34 @@
+erDiagram
+  users ||--o{ grades : "student_id"
+  classes ||--o{ grades : "class_id"
+  evaluations |o--o{ grades : "evaluation_id"
+  grades ||--o| recovery_goals : "grade_id (ON DELETE CASCADE)"
+  grades {
+    uuid id PK
+    uuid class_id FK
+    uuid student_id FK
+    uuid evaluation_id FK "nullable"
+    text subject
+    double value
+    double max
+    double coef
+    date graded_on
+    timestamptz created_at
+  }
+  recovery_goals {
+    uuid grade_id PK, FK "une note, au plus un objectif"
+    int target "NOT NULL, CHECK (target > 0)"
+    timestamptz created_at "DEFAULT now()"
+  }
+  users {
+    uuid id PK
+    text display_name
+  }
+  classes {
+    uuid id PK
+    uuid trainer_id FK
+  }
+  evaluations {
+    uuid id PK
+    uuid class_id FK
+  }
