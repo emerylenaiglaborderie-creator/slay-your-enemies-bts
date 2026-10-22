@@ -67,6 +67,7 @@ ERROR:  new row for relation "recovery_goals" violates check constraint "recover
 | POST | `/classes/{id}/grades` | Champs facultatifs `recovery_target` et `recovery_days` par élève lors de la saisie des notes |
 | PUT | `/grades/{id}/recovery-goal` | Définit ou remplace objectif et durée d'une note existante, `{ "target": 8, "days": 21 }` (204) |
 | DELETE | `/grades/{id}/recovery-goal` | Retire les réglages : plan de 14 jours sans objectif (204) |
+| GET | `/classes/{id}/grades` | Chaque note renvoie aussi `recovery_target` et `recovery_days`, pour afficher et préremplir ses réglages |
 
 Les plans renvoyés au formateur et à l'élève contiennent `target` et `days` (nombre ou `null`). Leur date de fin `until` tient compte de la durée.
 
@@ -85,12 +86,19 @@ Contrôles, dans l'ordre :
 
 ![Tableau de bord : Joshua a un objectif et une durée de 21 jours, Pierre n'a pas de réglage](capture-suivi-formateur.png)
 
-**Carnet de notes** :
+**Carnet de notes, à la saisie** :
 - sous chaque note, un champ « obj. », actif seulement pour une note inférieure à 10/20 ;
 - un champ « Durée du rattrapage (jours) » s'applique à toutes les notes de la saisie qui ouvrent un plan ;
 - une valeur invalide est signalée et rien n'est envoyé.
 
 ![Saisie : une durée de 400 jours est refusée](capture-saisie-objectif.png)
+
+**Carnet de notes, après coup** :
+- un bouton roue à côté de chaque note inférieure à 10/20 ouvre un panneau de réglage, prérempli avec les valeurs actuelles ;
+- les réglages en place sont résumés sous la note (« obj. 8 · 21 j ») ;
+- vider les deux champs ramène au plan par défaut.
+
+![Réglage du rattrapage de Pierre ; celui de Joshua est déjà réglé](capture-reglage-rattrapage.png)
 
 L'élève voit l'objectif dans sa carte « Plan de rattrapage » ; la date de fin affichée tient compte de la durée.
 
@@ -99,7 +107,8 @@ L'élève voit l'objectif dans sa carte « Plan de rattrapage » ; la date de fi
 | Vérification | Résultat |
 |---|---|
 | `cargo test` (règles métier, fonctions pures) | **14 réussis** : 9 d'origine et 5 nouveaux (objectif, durée, réglages de la dernière mauvaise note) |
-| `smoke.sh` (scénario de bout en bout sur l'API) | **52 vérifications, 0 échec**, dont 24 nouvelles |
+| `smoke.sh` (scénario de bout en bout sur l'API) | **53 vérifications, 0 échec**, dont 25 nouvelles |
+| Parcours dans le navigateur | Régler, modifier puis retirer les réglages d'une note existante : OK |
 | Plans existants avant / après migrations | **Identiques**, avec `target: null` et `days: null` |
 | Contraintes `CHECK` et clé étrangère en base | Objectif 0, durée 400, ligne vide et note inconnue refusés |
 | Suppression en cascade | Réglages supprimés avec leur note |
@@ -119,6 +128,7 @@ Cas couverts par le scénario de bout en bout :
 - **`PUT` et `DELETE`** :
   - `PUT` vide → 400, élève → 403, autre formateur → 404, note inconnue → 404 ;
   - `PUT` de 7 jours → plan raccourci ;
+  - les réglages apparaissent dans la liste des notes ;
   - `DELETE` → 204, le plan revient au fonctionnement par défaut.
 
 ## 7. Choix et limites
@@ -127,7 +137,8 @@ Cas couverts par le scénario de bout en bout :
 - **Durée** : elle allonge ou raccourcit la période où les quiz du thème rapportent le bonus de rattrapage. Les règles de calcul ne changent pas, et l'XP déjà gagnée reste acquise.
 - **Un réglage par plan** : celui de la dernière mauvaise note de la matière. Les réglages d'anciennes notes restent en base sans être utilisés.
 - **Durée par saisie dans l'interface**, par élève dans l'API.
-- **`PUT` remplace l'objectif et la durée ensemble.**
+- **`PUT` remplace l'objectif et la durée ensemble.** L'interface préremplit et renvoie toujours les deux valeurs.
+- **Bouton de réglage sur toute note sous 10/20**, même si son plan est fermé ou remplacé par une note plus récente.
 - **Constantes en double** : le seuil de 10/20 et les durées existent côté serveur et dans le carnet de notes (limite déjà présente). Le serveur reste la référence.
 
 **Évolutions possibles** :

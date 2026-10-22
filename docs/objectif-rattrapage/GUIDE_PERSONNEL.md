@@ -2,7 +2,7 @@
 
 Document de révision pour l'oral. Il explique ce qui a été modifié, pourquoi, comment le code fonctionne de bout en bout, et les questions pièges probables avec leurs réponses.
 
-Branche : `feat/objectif-rattrapage`, pull request n° 50 (16 commits, un par étape).
+Branche : `feat/objectif-rattrapage`, pull request n° 50 (20 commits, un par étape).
 
 ---
 
@@ -13,7 +13,7 @@ Deux demandes successives de TechLearn Solutions :
 1. **Objectif** : le formateur fixe, pour un plan de rattrapage, un **nombre de bonnes réponses à obtenir**. Strictement positif, facultatif.
 2. **Durée** : le formateur peut **changer le nombre de jours** du plan (14 par défaut). Entre 1 et 365, facultatif.
 
-Dans les deux cas, un plan sans réglage fonctionne **exactement comme avant**.
+Dans les deux cas, un plan sans réglage fonctionne **exactement comme avant**. Le formateur règle objectif et durée **à la saisie** d'une note, ou **après coup** depuis le carnet de notes (bouton roue à côté d'une note sous 10/20).
 
 ## 2. Le point à bien comprendre avant tout : un plan n'est pas stocké
 
@@ -103,14 +103,14 @@ sqlx enregistre dans la table `_sqlx_migrations` une **empreinte (checksum)** de
 
 Fichier [backend/src/routes/grades.rs](../../backend/src/routes/grades.rs).
 
-1. **Le modèle** ([grades.rs:71-73](../../backend/src/routes/grades.rs#L71-L73)) : `Entry` reçoit `recovery_target: Option<i32>` et `recovery_days: Option<i32>`. Avec serde, un champ `Option` **absent du JSON vaut `None`**. Les anciens clients continuent de fonctionner.
-2. **La validation, avant toute écriture** ([grades.rs:147-153](../../backend/src/routes/grades.rs#L147-L153)) : pour chaque entrée,
-   - `check_goal` ([grades.rs:81](../../backend/src/routes/grades.rs#L81)) : `target <= 0` → 400 ; `days` hors de 1 à 365 → 400 ;
+1. **Le modèle** ([grades.rs:76-78](../../backend/src/routes/grades.rs#L76-L78)) : `Entry` reçoit `recovery_target: Option<i32>` et `recovery_days: Option<i32>`. Avec serde, un champ `Option` **absent du JSON vaut `None`**. Les anciens clients continuent de fonctionner.
+2. **La validation, avant toute écriture** ([grades.rs:152-158](../../backend/src/routes/grades.rs#L152-L158)) : pour chaque entrée,
+   - `check_goal` ([grades.rs:86](../../backend/src/routes/grades.rs#L86)) : `target <= 0` → 400 ; `days` hors de 1 à 365 → 400 ;
    - un objectif ou une durée sur une note qui n'est pas mauvaise → 400 « l'objectif et la durée n'ont de sens que pour une note qui ouvre un plan ».
 
    `check_goal` est **partagée** avec la route `PUT` : une seule définition des règles. Le contrôle « la note ouvre un plan » réutilise `xp::grade_level(value, max)`, la **même fonction** que celle qui décide si un plan s'ouvre.
-3. **L'écriture, dans la transaction** ([grades.rs:208-215](../../backend/src/routes/grades.rs#L208-L215)) : juste après `INSERT INTO grades ... RETURNING id`, si un objectif ou une durée est présent, `INSERT INTO recovery_goals (grade_id, target, days)` avec l'`id` qui vient d'être généré, **sur la même transaction `tx`**. Une valeur `None` est envoyée comme `NULL`.
-4. **Atomicité** : tout le lot est dans une transaction ouverte par `state.db.begin()` ([grades.rs:155](../../backend/src/routes/grades.rs#L155)). Si une erreur survient avant `tx.commit()`, la transaction est abandonnée (le `Drop` de sqlx fait un `ROLLBACK`). Résultat : **soit tout est enregistré, soit rien**. Le smoke test le vérifie : un lot « Alice 15 + Bob 7 avec objectif 0 » est refusé et le nombre de notes de la classe ne change pas.
+3. **L'écriture, dans la transaction** ([grades.rs:213-220](../../backend/src/routes/grades.rs#L213-L220)) : juste après `INSERT INTO grades ... RETURNING id`, si un objectif ou une durée est présent, `INSERT INTO recovery_goals (grade_id, target, days)` avec l'`id` qui vient d'être généré, **sur la même transaction `tx`**. Une valeur `None` est envoyée comme `NULL`.
+4. **Atomicité** : tout le lot est dans une transaction ouverte par `state.db.begin()` ([grades.rs:160](../../backend/src/routes/grades.rs#L160)). Si une erreur survient avant `tx.commit()`, la transaction est abandonnée (le `Drop` de sqlx fait un `ROLLBACK`). Résultat : **soit tout est enregistré, soit rien**. Le smoke test le vérifie : un lot « Alice 15 + Bob 7 avec objectif 0 » est refusé et le nombre de notes de la classe ne change pas.
 
 ### 4.2 Modification après coup (`PUT` et `DELETE /grades/{id}/recovery-goal`)
 
@@ -118,7 +118,7 @@ Route déclarée [grades.rs:27](../../backend/src/routes/grades.rs#L27), même s
 
 Corps du `PUT` : `{ "target": 8, "days": 21 }`, chaque champ facultatif.
 
-`set_recovery_goal` ([grades.rs:251](../../backend/src/routes/grades.rs#L251)), dans cet ordre :
+`set_recovery_goal` ([grades.rs:256](../../backend/src/routes/grades.rs#L256)), dans cet ordre :
 
 | Étape | Échec | Pourquoi cet ordre |
 |---|---|---|
@@ -139,9 +139,13 @@ ON CONFLICT (grade_id) DO UPDATE SET target = EXCLUDED.target, days = EXCLUDED.d
 
 **Sémantique de `PUT`** : il **remplace** l'ensemble. Envoyer `{ "days": 7 }` sur une note qui avait un objectif **efface l'objectif**. C'est la définition de `PUT` en HTTP ; une mise à jour partielle serait un `PATCH`. Le smoke test le vérifie (« plan raccourci à 7 jours, sans objectif »).
 
-`delete_recovery_goal` ([grades.rs:283](../../backend/src/routes/grades.rs#L283)) : mêmes contrôles d'existence et de propriété, puis `DELETE`. Le plan redevient un plan de 14 jours sans objectif. Renvoie 204 même s'il n'y avait rien (idempotent aussi).
+`delete_recovery_goal` ([grades.rs:288](../../backend/src/routes/grades.rs#L288)) : mêmes contrôles d'existence et de propriété, puis `DELETE`. Le plan redevient un plan de 14 jours sans objectif. Renvoie 204 même s'il n'y avait rien (idempotent aussi).
 
 Réponse `204 No Content` : l'action a réussi et il n'y a rien à renvoyer.
+
+### 4.2 bis Lecture des réglages d'une note (`GET /classes/{id}/grades`)
+
+Pour que l'interface puisse **afficher et préremplir** les réglages d'une note existante, la liste des notes renvoie aussi `recovery_target` et `recovery_days`. La requête commune `SELECT` de [grades.rs:49-57](../../backend/src/routes/grades.rs#L49-L57) fait un `LEFT JOIN recovery_goals`, et `GradeRow` a deux champs `Option<i32>` en plus. La même requête sert `/me/grades` : l'élève voit donc aussi ces champs sur ses propres notes, ce qui ne pose pas de problème puisqu'il voit déjà l'objectif dans son plan.
 
 ### 4.3 Lecture : comment objectif et durée remontent dans le plan
 
@@ -187,24 +191,40 @@ Réponse `204 No Content` : l'action a réussi et il n'y a rien à renvoyer.
 
 | Fichier | Modification |
 |---|---|
-| [web/src/api/client.ts](../../web/src/api/client.ts) | `RecoveryPlan` gagne `target: number \| null` et `days: number \| null`. Le compilateur TypeScript force à gérer le cas `null`. |
+| [web/src/api/client.ts](../../web/src/api/client.ts) | `RecoveryPlan` gagne `target: number \| null` et `days: number \| null` ; `Grade` gagne `recovery_target` et `recovery_days`. Le compilateur TypeScript force à gérer le cas `null`. |
 | [web/src/i18n/fr.ts](../../web/src/i18n/fr.ts) | `dashboard.recoveryGoal(n)` → « objectif : 8 bonnes réponses » ; `dashboard.recoveryDays(n)` → « sur 21 jours » ; libellés et messages d'erreur des champs. Utilise `plural`. |
 | [web/src/pages/DashboardPage.tsx](../../web/src/pages/DashboardPage.tsx#L103-L104) | Deux rendus conditionnels. Sans réglage, React n'affiche rien (`false` n'est pas rendu) : le badge est identique à avant. |
 | [web/src/pages/GradesPage.tsx](../../web/src/pages/GradesPage.tsx#L44) | Carte de plan côté élève : l'objectif s'ajoute ; la date « Jusqu'au » utilise déjà `until`, donc tient compte de la durée sans modification. |
-| [web/src/components/GradeBook.tsx](../../web/src/components/GradeBook.tsx) | Un champ « obj. » sous chaque note, et un champ « Durée du rattrapage (jours) » pour toute la saisie. |
+| [web/src/components/GradeBook.tsx](../../web/src/components/GradeBook.tsx) | À la saisie : un champ « obj. » sous chaque note et une durée pour toute la saisie. Après coup : un bouton roue sur chaque note sous 10/20, qui ouvre un panneau de réglage. |
 
 ### Les champs de saisie dans le carnet de notes
 
-- `opensRecovery(value, max)` ([GradeBook.tsx:60](../../web/src/components/GradeBook.tsx#L60)) ramène la note **sur 20 avec le barème saisi** et la compare à la constante `BAD` (10) déjà présente. Le champ objectif est **désactivé** sinon.
+- `opensRecovery(value, max)` ([GradeBook.tsx:65](../../web/src/components/GradeBook.tsx#L65)) ramène la note **sur 20 avec le barème saisi** et la compare à la constante `BAD` (10) déjà présente. Le champ objectif est **désactivé** sinon.
 - **La durée est saisie une fois pour toute la colonne** (une évaluation), pas élève par élève : en pratique, le formateur donne le même délai à toute la classe pour un même contrôle. Elle n'est envoyée (`recovery_days`) que pour les notes qui ouvrent un plan. L'API, elle, accepte une durée différente par élève : on peut ajuster un élève avec `PUT`.
 - À l'enregistrement : la durée doit être un entier de 1 à 365, l'objectif un entier strictement positif ; sinon message d'erreur et **aucun envoi**.
 - La validation côté client est du **confort** (retour immédiat). La **sécurité**, c'est le serveur et la base : un client modifié qui enverrait 0 reçoit quand même 400.
+- `parseCount(raw, max)` ([GradeBook.tsx:72](../../web/src/components/GradeBook.tsx#L72)) lit un champ entier : `undefined` s'il est vide, `null` s'il est invalide, sinon le nombre. Elle sert aux deux formulaires, pour l'objectif (jusqu'à `2^31 - 1`, la limite d'un `i32`) et la durée (jusqu'à 365).
+
+### Régler le rattrapage d'une note existante
+
+C'est le cas des notes déjà en base (par exemple Joshua et Pierre dans la démo).
+
+1. **Bouton roue** ([GradeBook.tsx:377](../../web/src/components/GradeBook.tsx#L377)) : affiché à côté de chaque note **sous 10/20** (`on20(grade) < BAD`), hors saisie de colonne.
+2. **Résumé** sous la note quand un réglage existe : « obj. 8 · 21 j » (`t.grades.goalShort`).
+3. **Panneau** : `startGoal` ([GradeBook.tsx:202](../../web/src/components/GradeBook.tsx#L202)) ouvre un formulaire à deux champs, **prérempli** avec les valeurs actuelles venues de `GET /classes/{id}/grades`.
+4. **Enregistrement** : `saveGoal` ([GradeBook.tsx:209](../../web/src/components/GradeBook.tsx#L209)) valide les deux champs, puis :
+   - au moins un champ rempli → `PUT /grades/{id}/recovery-goal` avec `{ target, days }` (un champ vide vaut `undefined`, que `JSON.stringify` omet : le serveur le reçoit comme `None`) ;
+   - les deux champs vides → `DELETE`, retour au plan par défaut.
+
+   Puis message de confirmation et rechargement des notes (`onChanged`).
+
+Le formulaire envoie toujours **les deux** valeurs : c'est cohérent avec le `PUT` qui remplace tout. Le formateur voit les valeurs actuelles préremplies, donc il ne risque pas d'effacer un objectif sans le voir.
 
 ## 6. Défense en profondeur : trois niveaux de validation
 
 | Niveau | Où | Ce qu'il bloque |
 |---|---|---|
-| Interface | `GradeBook.tsx` | Objectif ou durée à 0, négatif, décimal, texte, durée au-delà de 365 ; champ objectif désactivé pour une bonne note |
+| Interface | `GradeBook.tsx` | Objectif ou durée à 0, négatif, décimal, texte, durée au-delà de 365 ; champ objectif désactivé et bouton roue absent pour une bonne note |
 | API | `grades.rs` | Mêmes valeurs (400), réglage sur une note sans plan (400), `PUT` vide (400), type invalide (422 par axum) |
 | Base | `CHECK` sur `target`, `days` et ligne non vide, clé étrangère | Toute écriture, même hors application |
 
@@ -226,11 +246,20 @@ Ce sont des tests de **fonctions pures** : pas de base, pas de réseau, instanta
 
 ### Bout en bout (`backend/scripts/smoke.sh`)
 
-24 vérifications ajoutées (52 au total, 0 échec).
-- **Objectif** : 0 et négatif refusés, lot refusé sans aucune note créée, objectif sur 14/20 refusé, création nominale, affichage chez le formateur et chez l'élève, `PUT` (0, élève, autre formateur, note inconnue, bonne note, valeur valide), modification, `DELETE`.
+25 vérifications ajoutées (53 au total, 0 échec).
+- **Objectif** : 0 et négatif refusés, lot refusé sans aucune note créée, objectif sur 14/20 refusé, création nominale, affichage chez le formateur et chez l'élève, `PUT` (0, élève, autre formateur, note inconnue, bonne note, valeur valide), modification, réglages visibles dans la liste des notes, `DELETE`.
 - **Durée** : 0 et 366 refusés, durée sur 12/20 refusée, plan de 30 jours avec date de fin exacte, `PUT` vide refusé, `PUT` durée 0 refusé, `PUT` durée seule (7 jours) qui raccourcit le plan et efface l'objectif.
 
 Une fonction `status` a été ajoutée au script : `call` utilise `curl -f`, qui fait **échouer** le script sur une réponse 4xx. Pour tester un refus, on lit le code HTTP seul (`-w '%{http_code}'`).
+
+### Vérification dans le navigateur
+
+Parcours complet dans un navigateur automatisé, sur une copie de la base de démo :
+- les roues apparaissent seulement pour Joshua et Pierre ;
+- une durée de 0 affiche une erreur et rien n'est envoyé ;
+- 8 et 21 enregistrés : le résumé « obj. 8 · 21 j » apparaît et le tableau de bord affiche « objectif : 8 bonnes réponses · sur 21 jours » ;
+- en rouvrant le panneau, les champs sont préremplis ;
+- en vidant les deux champs, les réglages sont retirés.
 
 ### Vérification des plans existants
 
@@ -284,7 +313,16 @@ Non. Le plan disparaît de l'affichage, mais la ligne reste dans `recovery_goals
 Oui, et c'est voulu. En SQL, `NULL > 0` vaut `NULL` (inconnu), et un `CHECK` ne rejette que ce qui vaut `FALSE`. C'est pour ça qu'il a suffi de retirer le `NOT NULL` pour rendre l'objectif facultatif, et qu'il a fallu une contrainte à part (`recovery_goals_not_empty`) pour interdire une ligne entièrement vide.
 
 **« J'envoie `PUT { "days": 7 }` sur une note qui avait un objectif de 8. Que devient l'objectif ? »**
-Il est **effacé**. `PUT` remplace la ressource entière. Pour tout garder, il faut renvoyer `{ "target": 8, "days": 7 }`. Une mise à jour partielle correspondrait à `PATCH`, non demandé.
+Il est **effacé**. `PUT` remplace la ressource entière. Pour tout garder, il faut renvoyer `{ "target": 8, "days": 7 }`. Une mise à jour partielle correspondrait à `PATCH`, non demandé. Dans l'interface, ce piège n'existe pas : le panneau est prérempli avec les deux valeurs et les renvoie toutes les deux.
+
+**« Comment le formateur règle-t-il une note déjà saisie ? »**
+Avec la roue à côté de la note dans le carnet. L'interface lit les réglages actuels dans `GET /classes/{id}/grades` (nouveaux champs `recovery_target` et `recovery_days`), les préremplit, puis envoie `PUT`, ou `DELETE` si les deux champs sont vides.
+
+**« Pourquoi la roue n'apparaît-elle pas sur une note de 12 ? »**
+Parce qu'une note de 10 ou plus n'ouvre pas de plan : un réglage n'aurait pas de sens et le serveur le refuserait (400). La condition est la même que côté serveur : note ramenée sur 20 inférieure à 10.
+
+**« La roue est affichée sur une ancienne mauvaise note dont le plan est fermé ? »**
+Oui : l'interface ne recalcule pas les plans, elle regarde seulement la note. Régler une ancienne note est autorisé, mais sans effet visible tant qu'elle n'est pas la dernière mauvaise note de sa matière avec un plan en cours. C'est une limite connue.
 
 **« Pourquoi `i32` et pas `u32`, puisque les valeurs sont positives ? »**
 PostgreSQL n'a pas d'entier non signé : `integer` correspond à `i32`, et sqlx associe les deux directement. Et un `u32` ne rejetterait pas 0. Les règles sont donc vérifiées explicitement en Rust et par les `CHECK`.
@@ -332,7 +370,8 @@ INSERT INTO recovery_goals (grade_id) VALUES ((SELECT id FROM grades LIMIT 1));
 
 - Un seul réglage compte par plan : celui de la dernière mauvaise note de la matière.
 - Les réglages disparaissent de l'affichage quand le plan se ferme, mais restent en base.
-- `PUT` remplace objectif et durée ensemble.
+- `PUT` remplace objectif et durée ensemble (l'interface renvoie toujours les deux).
+- La roue s'affiche sur toute note sous 10/20, même si son plan est fermé ou remplacé par une note plus récente.
 - Constantes (seuil, durée par défaut, maximum) codées côté serveur et dans le carnet de notes.
 - Pas de suivi de progression (« 3 sur 8 ») ni de récompense à l'objectif atteint : hors périmètre.
 - Le test web `Layout.test.tsx` produit 2 erreurs non gérées (déjà présentes avant ces modifications, non corrigées ici) : les 12 tests passent mais `npm test` sort en échec.
@@ -357,4 +396,8 @@ INSERT INTO recovery_goals (grade_id) VALUES ((SELECT id FROM grades LIMIT 1));
 | Interface | Champ durée et affichage sur le tableau de bord |
 | Schéma SQL | `days` dans `schema.sql` et `schema.dbml` |
 | Documentation API | Durée |
+| Documentation | Guide et présentation pour la durée |
+| Notes | La liste des notes renvoie `recovery_target` et `recovery_days`, 1 vérification smoke |
+| Carnet de notes | Bouton roue et panneau de réglage d'une note existante |
+| Documentation API | Champs de la liste des notes |
 | Documentation | Ce guide et la présentation mis à jour |
