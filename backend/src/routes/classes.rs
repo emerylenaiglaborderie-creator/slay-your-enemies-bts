@@ -270,11 +270,14 @@ async fn dashboard(State(state): State<AppState>, auth: AuthUser, Path(id): Path
     .await?;
 
     // Toutes les notes des membres : la moyenne porte sur la classe, les plans sur toutes les classes.
-    // (élève, classe, matière, note, barème, coef, date)
-    type GradeTuple = (Uuid, Uuid, String, f64, f64, f64, NaiveDate);
+    // (élève, classe, matière, note, barème, coef, date, objectif et durée de rattrapage)
+    // Tri par date puis saisie : à date égale, l'objectif retenu est celui de la dernière note saisie.
+    type GradeTuple = (Uuid, Uuid, String, f64, f64, f64, NaiveDate, Option<i32>, Option<i32>);
     let grades: Vec<GradeTuple> = sqlx::query_as(
-        "SELECT g.student_id, g.class_id, g.subject, g.value, g.max, g.coef, g.graded_on
-         FROM grades g JOIN class_members m ON m.student_id = g.student_id AND m.class_id = $1",
+        "SELECT g.student_id, g.class_id, g.subject, g.value, g.max, g.coef, g.graded_on, rg.target, rg.days
+         FROM grades g JOIN class_members m ON m.student_id = g.student_id AND m.class_id = $1
+         LEFT JOIN recovery_goals rg ON rg.grade_id = g.id
+         ORDER BY g.graded_on, g.created_at",
     )
     .bind(id)
     .fetch_all(&mut *conn)
@@ -294,7 +297,7 @@ async fn dashboard(State(state): State<AppState>, auth: AuthUser, Path(id): Path
                 .then(|| in_class.iter().map(|g| xp::on20(g.3, g.4) * g.5).sum::<f64>() / total_coef);
             let refs: Vec<xp::GradeRef> = list
                 .iter()
-                .map(|g| xp::GradeRef { subject: &g.2, value: g.3, max: g.4, graded_on: g.6 })
+                .map(|g| xp::GradeRef { subject: &g.2, value: g.3, max: g.4, graded_on: g.6, target: g.7, days: g.8 })
                 .collect();
             StudentCard {
                 id: row.id,

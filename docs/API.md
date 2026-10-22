@@ -114,8 +114,10 @@ Le défi passe automatiquement à `completed` quand les deux participants ont te
 | Méthode | Route | Détail |
 |---|---|---|
 | POST | `/classes/{id}/grades` **F** | Saisie groupée, voir ci-dessous → `[{ id, student_id, outcome: bonus\|recovery\|saved, xp_bonus }]` |
-| GET | `/classes/{id}/grades` **F** | Notes de la classe, avec nom de l'élève et de l'évaluation |
+| GET | `/classes/{id}/grades` **F** | Notes de la classe, avec nom de l'élève et de l'évaluation, et `recovery_target`, `recovery_days` (réglages du plan ouvert par la note, ou `null`) |
 | DELETE | `/grades/{id}` **F** | L'XP déjà gagnée reste acquise |
+| PUT | `/grades/{id}/recovery-goal` **F** | Corps `{ "target": 8, "days": 21 }`, chacun facultatif mais au moins l'un des deux → 204. Remplace l'objectif et la durée du plan ouvert par cette note (une valeur absente est effacée). 400 si `target <= 0`, si `days` hors de 1 à 365, ou si la note n'est pas sous 10/20 |
+| DELETE | `/grades/{id}/recovery-goal` **F** | Retire objectif et durée : plan de 14 jours sans objectif → 204 |
 | GET | `/me/grades` | Élève : `{ grades, average (sur 20, pondérée), recovery_plans }` |
 
 ```json
@@ -125,11 +127,13 @@ Le défi passe automatiquement à `completed` quand les deux participants ont te
   "max": 20,
   "coef": 2,
   "graded_on": "2026-10-13",
-  "entries": [{ "student_id": "…", "value": 15.5 }, { "student_id": "…", "value": 8 }]
+  "entries": [{ "student_id": "…", "value": 15.5 }, { "student_id": "…", "value": 8, "recovery_target": 8, "recovery_days": 21 }]
 }
 ```
 
 `subject` est facultatif si `evaluation_id` est donné (le thème, sinon le titre, de l'évaluation est repris). Il est comparé au thème des quiz pour les plans de rattrapage. Règles : note entre 0 et `max`, date pas dans le futur, élève membre de la classe. Une note d'au moins 14/20 datée de moins de 14 jours donne +20 XP (`bonus`) ; une note sous 10/20 ouvre un plan de rattrapage de 14 jours (`recovery`).
+
+`recovery_target` et `recovery_days` (facultatifs, par élève) : objectif du plan de rattrapage en nombre de bonnes réponses (entier strictement positif) et durée du plan en jours (de 1 à 365, 14 par défaut). Acceptés seulement sur une note sous 10/20 ; sinon 400 et aucune note du lot n'est enregistrée. Chaque plan de `recovery_plans` (`/me/grades`, `/me/pet`, tableau de bord) vaut `{ subject, until, target, days }` : `target` et `days` sont ceux de la dernière mauvaise note de la matière, ou `null` ; `until` tient déjà compte de la durée. L'objectif est informatif. La durée, elle, change la période pendant laquelle les quiz du thème donnent le bonus de rattrapage.
 
 ## Dragon (élèves)
 

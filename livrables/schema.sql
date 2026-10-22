@@ -1,6 +1,6 @@
 -- Schéma de la base de données, Slay your enemies (projet BTS SIO, CDD-QUIZ-2026-001)
--- Structure seule, sans données, après les migrations 0001 et 0002 (backend/migrations/).
--- Généré le 20/10/2026 avec pg_dump --schema-only.
+-- Structure seule, sans données, après les migrations 0001 à 0004 (backend/migrations/).
+-- Généré le 22/10/2026 avec pg_dump --schema-only.
 
 --
 -- PostgreSQL database dump
@@ -253,6 +253,21 @@ CREATE TABLE public.quizzes (
 
 
 --
+-- Name: recovery_goals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.recovery_goals (
+    grade_id uuid NOT NULL,
+    target integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    days integer,
+    CONSTRAINT recovery_goals_days_check CHECK (((days >= 1) AND (days <= 365))),
+    CONSTRAINT recovery_goals_not_empty CHECK (((target IS NOT NULL) OR (days IS NOT NULL))),
+    CONSTRAINT recovery_goals_target_check CHECK ((target > 0))
+);
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -392,6 +407,14 @@ ALTER TABLE ONLY public.questions
 
 ALTER TABLE ONLY public.quizzes
     ADD CONSTRAINT quizzes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: recovery_goals recovery_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recovery_goals
+    ADD CONSTRAINT recovery_goals_pkey PRIMARY KEY (grade_id);
 
 
 --
@@ -646,6 +669,14 @@ ALTER TABLE ONLY public.questions
 
 ALTER TABLE ONLY public.quizzes
     ADD CONSTRAINT quizzes_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: recovery_goals recovery_goals_grade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recovery_goals
+    ADD CONSTRAINT recovery_goals_grade_id_fkey FOREIGN KEY (grade_id) REFERENCES public.grades(id) ON DELETE CASCADE;
 
 
 --

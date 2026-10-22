@@ -12,6 +12,11 @@ import { IconButton } from './Tile'
 
 const GOOD = 14
 const BAD = 10
+/** Durée d'un plan de rattrapage : par défaut et maximum, comme `xp::RECOVERY_DAYS` et `xp::RECOVERY_MAX_DAYS`. */
+const RECOVERY_DAYS = 14
+const RECOVERY_MAX_DAYS = 365
+/** Plus grand objectif accepté par l'API (`i32`). */
+const MAX_TARGET = 2 ** 31 - 1
 const TYPE_ICON: Record<EvaluationType, PixelIconName> = { controle: 'shield', examen: 'crown', projet: 'hammer' }
 
 type Column = {
@@ -27,7 +32,24 @@ type Column = {
   grades: Map<string, Grade>
 }
 
-type Draft = { key: string; title: string; evaluationId?: string; subject: string; max: string; coef: string; date: string; locked: boolean; values: Record<string, string> }
+type Draft = {
+  key: string
+  title: string
+  evaluationId?: string
+  subject: string
+  max: string
+  coef: string
+  date: string
+  locked: boolean
+  values: Record<string, string>
+  /** élève → objectif de rattrapage saisi */
+  targets: Record<string, string>
+  /** durée des plans ouverts par cette saisie ; vide : `RECOVERY_DAYS` */
+  days: string
+}
+
+/** Réglage du rattrapage d'une note déjà saisie. */
+type GoalEdit = { grade: Grade; name: string; title: string; target: string; days: string }
 
 const on20 = (g: Pick<Grade, 'value' | 'max'>) => (g.value / g.max) * 20
 
@@ -37,6 +59,21 @@ function parseNumber(value: string): number | null {
   if (!normalized) return null
   const n = Number(normalized)
   return Number.isFinite(n) ? n : null
+}
+
+/** Vrai si la note saisie ouvre un plan de rattrapage : seule une telle note accepte un objectif. */
+function opensRecovery(value: string, max: string): boolean {
+  const v = parseNumber(value)
+  const m = parseNumber(max)
+  return v !== null && m !== null && m > 0 && on20({ value: v, max: m }) < BAD
+}
+
+/** Entier de 1 à `max` saisi dans un champ : `undefined` si vide, `null` si invalide. */
+function parseCount(raw: string, max: number): number | undefined | null {
+  const s = raw.trim()
+  if (!s) return undefined
+  const n = Number(s)
+  return Number.isInteger(n) && n >= 1 && n <= max ? n : null
 }
 
 /** Colonnes du carnet : évaluations passées (même sans note) et notes hors évaluation, par date. */
@@ -82,6 +119,7 @@ function GradeChip({ grade }: { grade: Grade }) {
 export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: ClassDetail; grades: Grade[]; evaluations: Evaluation[]; onChanged: () => void }) {
   const columns = useMemo(() => buildColumns(grades, evaluations), [grades, evaluations])
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [goal, setGoal] = useState<GoalEdit | null>(null)
   const [error, setError] = useState<string>()
   const [notice, setNotice] = useState<string>()
 
@@ -96,6 +134,7 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
   function startColumn(column: Column) {
     setNotice(undefined)
     setError(undefined)
+    setGoal(null)
     setDraft({
       key: column.key,
       title: column.title,
@@ -106,22 +145,41 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
       date: column.evaluationId ? (column.date <= todayIso() ? column.date : todayIso()) : column.date,
       locked: column.grades.size > 0,
       values: {},
+      targets: {},
+      days: '',
     })
   }
 
   function startFree() {
     setNotice(undefined)
     setError(undefined)
-    setDraft({ key: 'new', title: t.grades.newFree, subject: '', max: '20', coef: '1', date: todayIso(), locked: false, values: {} })
+    setGoal(null)
+    setDraft({ key: 'new', title: t.grades.newFree, subject: '', max: '20', coef: '1', date: todayIso(), locked: false, values: {}, targets: {}, days: '' })
   }
 
   async function save() {
     if (!draft) return
     setError(undefined)
-    const entries = detail.members.flatMap((m) => {
+    const days = parseCount(draft.days, RECOVERY_MAX_DAYS)
+    if (days === null) {
+      setError(t.grades.invalidDays(RECOVERY_MAX_DAYS))
+      return
+    }
+    const entries: { student_id: string; value: number; recovery_target?: number; recovery_days?: number }[] = []
+    for (const m of detail.members) {
       const value = parseNumber(draft.values[m.id] ?? '')
-      return value === null ? [] : [{ student_id: m.id, value }]
-    })
+      if (value === null) continue
+      if (!opensRecovery(draft.values[m.id] ?? '', draft.max)) {
+        entries.push({ student_id: m.id, value })
+        continue
+      }
+      const target = parseCount(draft.targets[m.id] ?? '', MAX_TARGET)
+      if (target === null) {
+        setError(t.grades.invalidTarget)
+        return
+      }
+      entries.push({ student_id: m.id, value, recovery_target: target, recovery_days: days })
+    }
     try {
       const created = await api<CreatedGrade[]>('POST', `/classes/${detail.id}/grades`, {
         evaluation_id: draft.evaluationId,
@@ -135,6 +193,32 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
       const recovery = created.filter((c) => c.outcome === 'recovery').length
       setNotice([t.grades.saved(created.length), t.grades.outcomes(bonus, recovery)].filter(Boolean).join(' '))
       setDraft(null)
+      onChanged()
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
+
+  function startGoal(grade: Grade, name: string, title: string) {
+    setNotice(undefined)
+    setError(undefined)
+    setGoal({ grade, name, title, target: grade.recovery_target?.toString() ?? '', days: grade.recovery_days?.toString() ?? '' })
+  }
+
+  /** Objectif et durée vides : on retire les réglages (`DELETE`), sinon on les remplace (`PUT`). */
+  async function saveGoal() {
+    if (!goal) return
+    setError(undefined)
+    const target = parseCount(goal.target, MAX_TARGET)
+    const days = parseCount(goal.days, RECOVERY_MAX_DAYS)
+    if (target === null) return setError(t.grades.invalidTarget)
+    if (days === null) return setError(t.grades.invalidDays(RECOVERY_MAX_DAYS))
+    try {
+      const path = `/grades/${goal.grade.id}/recovery-goal`
+      if (target === undefined && days === undefined) await api('DELETE', path)
+      else await api('PUT', path, { target, days })
+      setNotice(t.grades.goalSaved(goal.name))
+      setGoal(null)
       onChanged()
     } catch (err) {
       setError(errorMessage(err))
@@ -186,9 +270,18 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
             <TextField label={t.grades.max} inputMode="decimal" value={draft.max} disabled={draft.locked} onChange={(e) => setDraft({ ...draft, max: e.target.value })} />
             <TextField label={t.grades.coef} inputMode="decimal" value={draft.coef} disabled={draft.locked} onChange={(e) => setDraft({ ...draft, coef: e.target.value })} />
             <TextField label={t.grades.date} type="date" max={todayIso()} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
+            <TextField
+              label={t.grades.recoveryDays}
+              hint={t.grades.recoveryDaysHint(RECOVERY_DAYS)}
+              inputMode="numeric"
+              placeholder={String(RECOVERY_DAYS)}
+              value={draft.days}
+              onChange={(e) => setDraft({ ...draft, days: e.target.value })}
+            />
           </div>
           {draft.locked && <p className="text-sm text-ink-muted">{t.grades.lockedScale}</p>}
           <p className="text-sm text-ink-muted">{t.grades.emptyValueHint}</p>
+          <p className="text-sm text-ink-muted">{t.grades.targetHint}</p>
           <ErrorText>{error}</ErrorText>
           <div className="flex gap-1">
             <Button variant="primary" onClick={() => void save()}>
@@ -198,8 +291,37 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
           </div>
         </Panel>
       )}
+      {goal && !draft && (
+        <Panel className="flex flex-col gap-2 [--frame:var(--color-xp)]">
+          <h3 className="font-pixel text-lg">{t.grades.goalTitle(goal.name, goal.title)}</h3>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <TextField
+              label={t.grades.goalTarget}
+              inputMode="numeric"
+              placeholder={t.grades.goalNone}
+              value={goal.target}
+              onChange={(e) => setGoal({ ...goal, target: e.target.value })}
+            />
+            <TextField
+              label={t.grades.recoveryDays}
+              inputMode="numeric"
+              placeholder={String(RECOVERY_DAYS)}
+              value={goal.days}
+              onChange={(e) => setGoal({ ...goal, days: e.target.value })}
+            />
+          </div>
+          <p className="text-sm text-ink-muted">{t.grades.goalHint(RECOVERY_DAYS)}</p>
+          <ErrorText>{error}</ErrorText>
+          <div className="flex gap-1">
+            <Button variant="primary" onClick={() => void saveGoal()}>
+              {t.grades.goalSave}
+            </Button>
+            <Button onClick={() => setGoal(null)}>{t.common.cancel}</Button>
+          </div>
+        </Panel>
+      )}
       <Notice>{notice}</Notice>
-      {!draft && <ErrorText>{error}</ErrorText>}
+      {!draft && !goal && <ErrorText>{error}</ErrorText>}
 
       {shown.length === 0 ? (
         <p className="text-ink-muted">{t.grades.noColumns}</p>
@@ -247,18 +369,35 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
                       return (
                         <td key={c.key} className={`p-0.5 text-center ${active ? 'bg-accent-tint' : ''}`}>
                           {grade ? (
-                            <span className="inline-flex items-center gap-0.5">
-                              <GradeChip grade={grade} />
-                              {active && <IconButton icon="trash" label={t.grades.deleteGrade(m.display_name)} danger onClick={() => void removeGrade(grade)} />}
+                            <span className="inline-flex flex-col items-center gap-0.5">
+                              <span className="inline-flex items-center gap-0.5">
+                                <GradeChip grade={grade} />
+                                {active && <IconButton icon="trash" label={t.grades.deleteGrade(m.display_name)} danger onClick={() => void removeGrade(grade)} />}
+                                {!draft && on20(grade) < BAD && (
+                                  <IconButton icon="settings" label={t.grades.goalEdit(m.display_name)} onClick={() => startGoal(grade, m.display_name, c.title)} />
+                                )}
+                              </span>
+                              {(grade.recovery_target !== null || grade.recovery_days !== null) && (
+                                <span className="text-xs text-xp">{t.grades.goalShort(grade.recovery_target, grade.recovery_days)}</span>
+                              )}
                             </span>
                           ) : active && draft ? (
-                            <div className="mx-auto w-8">
+                            <div className="mx-auto flex w-8 flex-col gap-0.5">
                               <input
                                 aria-label={`${m.display_name} : ${draft.title}`}
                                 inputMode="decimal"
                                 className={`${inputClass} text-center tabular-nums`}
                                 value={draft.values[m.id] ?? ''}
                                 onChange={(e) => setDraft({ ...draft, values: { ...draft.values, [m.id]: e.target.value } })}
+                              />
+                              <input
+                                aria-label={t.grades.targetLabel(m.display_name)}
+                                placeholder={t.grades.targetPlaceholder}
+                                inputMode="numeric"
+                                className={`${inputClass} text-center text-xs tabular-nums disabled:opacity-40`}
+                                disabled={!opensRecovery(draft.values[m.id] ?? '', draft.max)}
+                                value={draft.targets[m.id] ?? ''}
+                                onChange={(e) => setDraft({ ...draft, targets: { ...draft.targets, [m.id]: e.target.value } })}
                               />
                             </div>
                           ) : (

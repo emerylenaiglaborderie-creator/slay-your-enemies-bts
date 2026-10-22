@@ -41,6 +41,7 @@ export function RecoveryPlanCard({ plan, perAnswer, max }: { plan: RecoveryPlan;
       </span>
       <p className="text-sm text-ink-muted">
         {t.grades.recoveryText(plan.subject, perAnswer, max)} {t.grades.recoveryUntil(formatDay(plan.until))}
+        {plan.target !== null && ` · ${t.grades.recoveryGoal(plan.target)}`}
       </p>
     </article>
   )

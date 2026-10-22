@@ -135,14 +135,26 @@ async fn log_event(conn: &mut PgConnection, user_id: Uuid, amount: i32, reason: 
 
 /// Plans de rattrapage en cours d'un élève, toutes classes confondues.
 pub async fn recovery_plans(conn: &mut PgConnection, student_id: Uuid, today: NaiveDate) -> sqlx::Result<Vec<RecoveryPlan>> {
-    let rows: Vec<(String, f64, f64, NaiveDate)> =
-        sqlx::query_as("SELECT subject, value, max, graded_on FROM grades WHERE student_id = $1")
-            .bind(student_id)
-            .fetch_all(conn)
-            .await?;
+    // Tri par date puis saisie : à date égale, l'objectif retenu est celui de la dernière note saisie.
+    let rows: Vec<(String, f64, f64, NaiveDate, Option<i32>, Option<i32>)> = sqlx::query_as(
+        "SELECT g.subject, g.value, g.max, g.graded_on, rg.target, rg.days
+         FROM grades g LEFT JOIN recovery_goals rg ON rg.grade_id = g.id
+         WHERE g.student_id = $1
+         ORDER BY g.graded_on, g.created_at",
+    )
+    .bind(student_id)
+    .fetch_all(conn)
+    .await?;
     let grades: Vec<xp::GradeRef> = rows
         .iter()
-        .map(|(subject, value, max, graded_on)| xp::GradeRef { subject, value: *value, max: *max, graded_on: *graded_on })
+        .map(|(subject, value, max, graded_on, target, days)| xp::GradeRef {
+            subject,
+            value: *value,
+            max: *max,
+            graded_on: *graded_on,
+            target: *target,
+            days: *days,
+        })
         .collect();
     Ok(xp::active_recovery_plans(&grades, today))
 }

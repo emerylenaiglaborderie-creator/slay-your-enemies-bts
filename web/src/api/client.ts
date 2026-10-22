@@ -107,10 +107,15 @@ export type Grade = {
   max: number
   coef: number
   graded_on: string
+  /** Réglages du plan de rattrapage ouvert par cette note, `null` sinon. */
+  recovery_target: number | null
+  recovery_days: number | null
 }
 export type GradeOutcome = 'bonus' | 'recovery' | 'saved'
 export type CreatedGrade = { id: string; student_id: string; outcome: GradeOutcome; xp_bonus: number }
-export type RecoveryPlan = { subject: string; until: string }
+/** `target` : bonnes réponses à obtenir ; `days` : durée personnalisée, déjà comptée dans `until`.
+ *  Tous deux fixés par le formateur, `null` sinon (durée par défaut : 14 jours). */
+export type RecoveryPlan = { subject: string; until: string; target: number | null; days: number | null }
 export type MyGrades = { grades: Grade[]; average: number | null; recovery_plans: RecoveryPlan[] }
 
 export type PetView = {
