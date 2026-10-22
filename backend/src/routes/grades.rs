@@ -4,7 +4,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get},
+    routing::{delete, get, put},
     Json, Router,
 };
 use chrono::NaiveDate;
@@ -24,6 +24,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/classes/{id}/grades", get(class_grades).post(create_grades))
         .route("/grades/{id}", delete(delete_grade))
+        .route("/grades/{id}/recovery-goal", put(set_recovery_goal).delete(delete_recovery_goal))
         .route("/me/grades", get(my_grades))
 }
 
@@ -65,7 +66,13 @@ async fn class_grades(State(state): State<AppState>, auth: AuthUser, Path(id): P
 struct Entry {
     student_id: Uuid,
     value: f64,
+    /// Objectif du plan de rattrapage (bonnes réponses à obtenir), seulement pour une mauvaise note.
+    /// Absent du JSON : `None`, les clients existants ne sont pas concernés.
+    recovery_target: Option<i32>,
 }
+
+const INVALID_TARGET: &str = "l'objectif doit être supérieur à 0";
+const TARGET_WITHOUT_PLAN: &str = "l'objectif n'a de sens que pour une note qui ouvre un plan";
 
 #[derive(Deserialize)]
 struct GradesBody {
@@ -123,6 +130,16 @@ async fn create_grades(
     if let Some(e) = body.entries.iter().find(|e| !(0.0..=body.max).contains(&e.value)) {
         return Err(AppError::BadRequest(format!("note {} hors barème (0 à {})", e.value, body.max)));
     }
+    // Contrôlés avant toute écriture ; la base garantit aussi `target > 0` (CHECK de `recovery_goals`).
+    for e in &body.entries {
+        match e.recovery_target {
+            Some(t) if t <= 0 => return Err(AppError::BadRequest(INVALID_TARGET.into())),
+            Some(_) if xp::grade_level(e.value, body.max) != GradeLevel::Bad => {
+                return Err(AppError::BadRequest(TARGET_WITHOUT_PLAN.into()))
+            }
+            _ => {}
+        }
+    }
 
     let mut tx = state.db.begin().await?;
     let today = pet::today(&mut tx).await?;
@@ -177,6 +194,13 @@ async fn create_grades(
         .bind(body.graded_on)
         .fetch_one(&mut *tx)
         .await?;
+        if let Some(target) = entry.recovery_target {
+            sqlx::query("INSERT INTO recovery_goals (grade_id, target) VALUES ($1, $2)")
+                .bind(id)
+                .bind(target)
+                .execute(&mut *tx)
+                .await?;
+        }
 
         let (outcome, xp_bonus) = if xp::earns_good_grade_bonus(entry.value, body.max, body.graded_on, today) {
             pet::award_bonus(&mut tx, entry.student_id, xp::GOOD_GRADE_BONUS, "good_grade", id).await?;
@@ -201,6 +225,53 @@ async fn delete_grade(State(state): State<AppState>, auth: AuthUser, Path(id): P
         .ok_or(AppError::NotFound)?;
     owned_class(&state, &auth, class_id).await?;
     sqlx::query("DELETE FROM grades WHERE id = $1").bind(id).execute(&state.db).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct GoalBody {
+    target: i32,
+}
+
+/// Définit ou remplace l'objectif du plan de rattrapage ouvert par une note.
+async fn set_recovery_goal(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<GoalBody>,
+) -> AppResult<StatusCode> {
+    if body.target <= 0 {
+        return Err(AppError::BadRequest(INVALID_TARGET.into()));
+    }
+    let (class_id, value, max): (Uuid, f64, f64) = sqlx::query_as("SELECT class_id, value, max FROM grades WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    owned_class(&state, &auth, class_id).await?;
+    if xp::grade_level(value, max) != GradeLevel::Bad {
+        return Err(AppError::BadRequest(TARGET_WITHOUT_PLAN.into()));
+    }
+    sqlx::query(
+        "INSERT INTO recovery_goals (grade_id, target) VALUES ($1, $2)
+         ON CONFLICT (grade_id) DO UPDATE SET target = EXCLUDED.target",
+    )
+    .bind(id)
+    .bind(body.target)
+    .execute(&state.db)
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Retire l'objectif d'une note : le plan redevient un plan sans objectif.
+async fn delete_recovery_goal(State(state): State<AppState>, auth: AuthUser, Path(id): Path<Uuid>) -> AppResult<StatusCode> {
+    let class_id: Uuid = sqlx::query_scalar("SELECT class_id FROM grades WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    owned_class(&state, &auth, class_id).await?;
+    sqlx::query("DELETE FROM recovery_goals WHERE grade_id = $1").bind(id).execute(&state.db).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
