@@ -107,6 +107,9 @@ export type Grade = {
   max: number
   coef: number
   graded_on: string
+  /** Réglages du plan de rattrapage ouvert par cette note, `null` sinon. */
+  recovery_target: number | null
+  recovery_days: number | null
 }
 export type GradeOutcome = 'bonus' | 'recovery' | 'saved'
 export type CreatedGrade = { id: string; student_id: string; outcome: GradeOutcome; xp_bonus: number }
