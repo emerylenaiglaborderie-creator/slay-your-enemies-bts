@@ -16,8 +16,9 @@ erDiagram
     timestamptz created_at
   }
   recovery_goals {
-    uuid grade_id PK, FK "une note, au plus un objectif"
-    int target "NOT NULL, CHECK (target > 0)"
+    uuid grade_id PK, FK "une note, au plus une ligne"
+    int target "CHECK (target > 0)"
+    int days "CHECK (days BETWEEN 1 AND 365), vide = 14 j"
     timestamptz created_at "DEFAULT now()"
   }
   users {
