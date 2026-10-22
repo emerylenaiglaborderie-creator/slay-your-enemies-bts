@@ -118,6 +118,7 @@ GOOD_ID=$(call GET "/classes/$CLASS_ID/grades" "$T" | jq -r '[.[] | select(.valu
 check "PUT objectif sur une bonne note refusé" "$(status PUT "/grades/$GOOD_ID/recovery-goal" "$T" '{"target":5}')" 400
 check "PUT objectif valide" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{"target":12}')" 204
 check "objectif modifié" "$(plans_bob)" "reseau:null,sql:12"
+check "réglages dans la liste des notes" "$(call GET "/classes/$CLASS_ID/grades" "$T" | jq -r ".[] | select(.id==\"$G_ID\") | \"\\(.recovery_target),\\(.recovery_days)\"")" "12,null"
 check "DELETE objectif" "$(status DELETE "/grades/$G_ID/recovery-goal" "$T")" 204
 check "plan sans objectif après retrait" "$(plans_bob)" "reseau:null,sql:null"
 

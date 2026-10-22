@@ -42,14 +42,19 @@ struct GradeRow {
     max: f64,
     coef: f64,
     graded_on: NaiveDate,
+    /// Réglages du plan de rattrapage ouvert par cette note (table `recovery_goals`), sinon `null`.
+    recovery_target: Option<i32>,
+    recovery_days: Option<i32>,
 }
 
 const SELECT: &str = "SELECT g.id, g.class_id, c.name AS class_name, g.student_id, u.display_name AS student_name,
-                             g.evaluation_id, e.title AS evaluation_title, g.subject, g.value, g.max, g.coef, g.graded_on
+                             g.evaluation_id, e.title AS evaluation_title, g.subject, g.value, g.max, g.coef, g.graded_on,
+                             rg.target AS recovery_target, rg.days AS recovery_days
                       FROM grades g
                       JOIN classes c ON c.id = g.class_id
                       JOIN users u ON u.id = g.student_id
-                      LEFT JOIN evaluations e ON e.id = g.evaluation_id";
+                      LEFT JOIN evaluations e ON e.id = g.evaluation_id
+                      LEFT JOIN recovery_goals rg ON rg.grade_id = g.id";
 
 async fn class_grades(State(state): State<AppState>, auth: AuthUser, Path(id): Path<Uuid>) -> AppResult<Json<Vec<GradeRow>>> {
     owned_class(&state, &auth, id).await?;
