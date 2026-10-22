@@ -12,6 +12,9 @@ register() { # email nom rôle
   curl -sS -f -X POST "$API/auth/register" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$1\",\"password\":\"motdepasse\",\"display_name\":\"$2\",\"role\":\"$3\"}" | jq -r .token
 }
+status() { # méthode chemin token [corps] : code HTTP seul, sans échouer sur une erreur
+  curl -s -o /dev/null -w '%{http_code}' -X "$1" "$API$2" -H "Authorization: Bearer $3" -H 'Content-Type: application/json' ${4:+-d "$4"}
+}
 check() { [ "$2" = "$3" ] && echo "ok   $1" || { echo "FAIL $1 : attendu $3, obtenu $2"; exit 1; }; }
 
 T=$(register "prof$RUN@test.fr" "Prof" trainer)
@@ -93,4 +96,28 @@ check "tableau de bord : élèves" "$(echo "$DASH" | jq '.students | length')" 2
 check "tableau de bord : dragon de Bob" "$(echo "$DASH" | jq -r '.students[] | select(.display_name=="Bob") | "\(.pet.xp),\(.pet.stage),\(.recovery_plans | length)"')" "41,egg,1"
 check "tableau de bord : moyenne d'Alice" "$(echo "$DASH" | jq -r '.students[] | select(.display_name=="Alice") | .average')" 16.0
 check "tableau de bord réservé" "$(curl -s -o /dev/null -w '%{http_code}' "$API/classes/$CLASS_ID/dashboard" -H "Authorization: Bearer $A")" 403
+
+# Objectif de progression d'un plan de rattrapage (table recovery_goals)
+COUNT=$(call GET "/classes/$CLASS_ID/grades" "$T" | jq length)
+check "objectif 0 refusé" "$(status POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"sql\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$A_ID\",\"value\":15},{\"student_id\":\"$B_ID\",\"value\":7,\"recovery_target\":0}]}")" 400
+check "objectif négatif refusé" "$(status POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"sql\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$B_ID\",\"value\":7,\"recovery_target\":-3}]}")" 400
+check "lot refusé : aucune note créée" "$(call GET "/classes/$CLASS_ID/grades" "$T" | jq length)" "$COUNT"
+check "objectif sur une note sans plan refusé" "$(status POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"sql\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$A_ID\",\"value\":14,\"recovery_target\":8}]}")" 400
+GOAL=$(call POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"sql\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$B_ID\",\"value\":7,\"recovery_target\":8}]}")
+check "note avec objectif : plan ouvert" "$(echo "$GOAL" | jq -r '.[0].outcome')" recovery
+G_ID=$(echo "$GOAL" | jq -r '.[0].id')
+plans_bob() { call GET "/classes/$CLASS_ID/dashboard" "$T" | jq -r '[.students[] | select(.display_name=="Bob") | .recovery_plans[] | "\(.subject):\(.target)"] | sort | join(",")'; }
+check "tableau de bord : objectif affiché, plan sans objectif inchangé" "$(plans_bob)" "reseau:null,sql:8"
+check "vue élève : objectif" "$(call GET /me/grades "$B" | jq -r '.recovery_plans[] | select(.subject=="sql") | .target')" 8
+check "PUT objectif 0 refusé" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{"target":0}')" 400
+check "PUT objectif par un élève refusé" "$(status PUT "/grades/$G_ID/recovery-goal" "$B" '{"target":5}')" 403
+T2=$(register "prof2$RUN@test.fr" "Prof 2" trainer)
+check "PUT objectif par un autre formateur : note introuvable" "$(status PUT "/grades/$G_ID/recovery-goal" "$T2" '{"target":5}')" 404
+check "PUT objectif sur une note inconnue" "$(status PUT "/grades/00000000-0000-0000-0000-000000000000/recovery-goal" "$T" '{"target":5}')" 404
+GOOD_ID=$(call GET "/classes/$CLASS_ID/grades" "$T" | jq -r '[.[] | select(.value >= 10)][0].id')
+check "PUT objectif sur une bonne note refusé" "$(status PUT "/grades/$GOOD_ID/recovery-goal" "$T" '{"target":5}')" 400
+check "PUT objectif valide" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{"target":12}')" 204
+check "objectif modifié" "$(plans_bob)" "reseau:null,sql:12"
+check "DELETE objectif" "$(status DELETE "/grades/$G_ID/recovery-goal" "$T")" 204
+check "plan sans objectif après retrait" "$(plans_bob)" "reseau:null,sql:null"
 echo "Scénario complet : OK"
