@@ -1,5 +1,5 @@
 -- Schéma de la base de données, Slay your enemies (projet BTS SIO, CDD-QUIZ-2026-001)
--- Structure seule, sans données, après les migrations 0001, 0002 et 0003 (backend/migrations/).
+-- Structure seule, sans données, après les migrations 0001 à 0004 (backend/migrations/).
 -- Généré le 22/10/2026 avec pg_dump --schema-only.
 
 --
@@ -258,8 +258,11 @@ CREATE TABLE public.quizzes (
 
 CREATE TABLE public.recovery_goals (
     grade_id uuid NOT NULL,
-    target integer NOT NULL,
+    target integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    days integer,
+    CONSTRAINT recovery_goals_days_check CHECK (((days >= 1) AND (days <= 365))),
+    CONSTRAINT recovery_goals_not_empty CHECK (((target IS NOT NULL) OR (days IS NOT NULL))),
     CONSTRAINT recovery_goals_target_check CHECK ((target > 0))
 );
 

@@ -1,6 +1,6 @@
 // Schéma complet de la base, à coller dans https://dbdiagram.io pour régénérer le livrable PDF.
 // Source de vérité : backend/migrations/. Les tables du bas (classes à xp_events) viennent de la migration 0002,
-// recovery_goals de la migration 0003.
+// recovery_goals des migrations 0003 (objectif) et 0004 (durée).
 
 Enum user_role {
   student
@@ -169,10 +169,12 @@ Table xp_events {
   created_at timestamptz [not null]
 }
 
-// Objectif de progression d'un plan de rattrapage, rattaché à la mauvaise note qui ouvre le plan.
-// Au plus un par note ; aucune ligne = plan sans objectif.
+// Objectif et durée d'un plan de rattrapage, rattachés à la mauvaise note qui ouvre le plan.
+// Au plus une ligne par note, avec au moins l'objectif ou la durée ; aucune ligne = plan par défaut.
 Table recovery_goals {
   grade_id uuid [pk, ref: - grades.id, note: 'ON DELETE CASCADE']
-  target int [not null, note: 'CHECK (target > 0) : bonnes réponses à obtenir']
+  target int [note: 'CHECK (target > 0) : bonnes réponses à obtenir']
+  days int [note: 'CHECK (days BETWEEN 1 AND 365) ; vide = 14 jours']
   created_at timestamptz [not null]
+  Note: 'CHECK (target IS NOT NULL OR days IS NOT NULL)'
 }
