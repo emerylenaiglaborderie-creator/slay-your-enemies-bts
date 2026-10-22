@@ -110,8 +110,9 @@ export type Grade = {
 }
 export type GradeOutcome = 'bonus' | 'recovery' | 'saved'
 export type CreatedGrade = { id: string; student_id: string; outcome: GradeOutcome; xp_bonus: number }
-/** `target` : bonnes réponses à obtenir, fixé par le formateur ; `null` sans objectif. */
-export type RecoveryPlan = { subject: string; until: string; target: number | null }
+/** `target` : bonnes réponses à obtenir ; `days` : durée personnalisée, déjà comptée dans `until`.
+ *  Tous deux fixés par le formateur, `null` sinon (durée par défaut : 14 jours). */
+export type RecoveryPlan = { subject: string; until: string; target: number | null; days: number | null }
 export type MyGrades = { grades: Grade[]; average: number | null; recovery_plans: RecoveryPlan[] }
 
 export type PetView = {

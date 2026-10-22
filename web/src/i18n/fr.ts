@@ -190,6 +190,9 @@ export const fr = {
     targetLabel: (name: string) => `Objectif de rattrapage de ${name}`,
     targetPlaceholder: 'obj.',
     invalidTarget: 'L’objectif doit être un nombre entier supérieur à 0.',
+    recoveryDays: 'Durée du rattrapage (jours)',
+    recoveryDaysHint: (n: number) => `Pour les notes sous 10/20 de cette saisie. Vide : ${n} jours.`,
+    invalidDays: (max: number) => `La durée doit être un nombre entier de jours entre 1 et ${max}.`,
     saveAll: 'Enregistrer les notes',
     saved: (n: number) => `${plural(n, 'note enregistrée', 'notes enregistrées')}.`,
     outcomes: (bonus: number, recovery: number) =>
@@ -262,6 +265,7 @@ export const fr = {
     noAverage: 'Pas encore de note',
     recovery: (subject: string) => `Rattrapage ${subject}`,
     recoveryGoal: (n: number) => `objectif : ${plural(n, 'bonne réponse', 'bonnes réponses')}`,
+    recoveryDays: (n: number) => `sur ${plural(n, 'jour', 'jours')}`,
     sort: 'Trier par',
     sorts: { name: 'Nom', level: 'Niveau', average: 'Moyenne', activity: 'Activité' },
   },

@@ -12,6 +12,9 @@ import { IconButton } from './Tile'
 
 const GOOD = 14
 const BAD = 10
+/** Durée d'un plan de rattrapage : par défaut et maximum, comme `xp::RECOVERY_DAYS` et `xp::RECOVERY_MAX_DAYS`. */
+const RECOVERY_DAYS = 14
+const RECOVERY_MAX_DAYS = 365
 const TYPE_ICON: Record<EvaluationType, PixelIconName> = { controle: 'shield', examen: 'crown', projet: 'hammer' }
 
 type Column = {
@@ -39,6 +42,8 @@ type Draft = {
   values: Record<string, string>
   /** élève → objectif de rattrapage saisi */
   targets: Record<string, string>
+  /** durée des plans ouverts par cette saisie ; vide : `RECOVERY_DAYS` */
+  days: string
 }
 
 const on20 = (g: Pick<Grade, 'value' | 'max'>) => (g.value / g.max) * 20
@@ -126,33 +131,39 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
       locked: column.grades.size > 0,
       values: {},
       targets: {},
+      days: '',
     })
   }
 
   function startFree() {
     setNotice(undefined)
     setError(undefined)
-    setDraft({ key: 'new', title: t.grades.newFree, subject: '', max: '20', coef: '1', date: todayIso(), locked: false, values: {}, targets: {} })
+    setDraft({ key: 'new', title: t.grades.newFree, subject: '', max: '20', coef: '1', date: todayIso(), locked: false, values: {}, targets: {}, days: '' })
   }
 
   async function save() {
     if (!draft) return
     setError(undefined)
-    const entries: { student_id: string; value: number; recovery_target?: number }[] = []
+    const days = draft.days.trim() ? Number(draft.days.trim()) : undefined
+    if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > RECOVERY_MAX_DAYS)) {
+      setError(t.grades.invalidDays(RECOVERY_MAX_DAYS))
+      return
+    }
+    const entries: { student_id: string; value: number; recovery_target?: number; recovery_days?: number }[] = []
     for (const m of detail.members) {
       const value = parseNumber(draft.values[m.id] ?? '')
       if (value === null) continue
-      const rawTarget = (draft.targets[m.id] ?? '').trim()
-      if (!rawTarget || !opensRecovery(draft.values[m.id] ?? '', draft.max)) {
+      if (!opensRecovery(draft.values[m.id] ?? '', draft.max)) {
         entries.push({ student_id: m.id, value })
         continue
       }
-      const target = Number(rawTarget)
-      if (!Number.isInteger(target) || target <= 0) {
+      const rawTarget = (draft.targets[m.id] ?? '').trim()
+      const target = rawTarget ? Number(rawTarget) : undefined
+      if (target !== undefined && (!Number.isInteger(target) || target <= 0)) {
         setError(t.grades.invalidTarget)
         return
       }
-      entries.push({ student_id: m.id, value, recovery_target: target })
+      entries.push({ student_id: m.id, value, recovery_target: target, recovery_days: days })
     }
     try {
       const created = await api<CreatedGrade[]>('POST', `/classes/${detail.id}/grades`, {
@@ -218,6 +229,14 @@ export function GradeBook({ detail, grades, evaluations, onChanged }: { detail: 
             <TextField label={t.grades.max} inputMode="decimal" value={draft.max} disabled={draft.locked} onChange={(e) => setDraft({ ...draft, max: e.target.value })} />
             <TextField label={t.grades.coef} inputMode="decimal" value={draft.coef} disabled={draft.locked} onChange={(e) => setDraft({ ...draft, coef: e.target.value })} />
             <TextField label={t.grades.date} type="date" max={todayIso()} value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
+            <TextField
+              label={t.grades.recoveryDays}
+              hint={t.grades.recoveryDaysHint(RECOVERY_DAYS)}
+              inputMode="numeric"
+              placeholder={String(RECOVERY_DAYS)}
+              value={draft.days}
+              onChange={(e) => setDraft({ ...draft, days: e.target.value })}
+            />
           </div>
           {draft.locked && <p className="text-sm text-ink-muted">{t.grades.lockedScale}</p>}
           <p className="text-sm text-ink-muted">{t.grades.emptyValueHint}</p>
