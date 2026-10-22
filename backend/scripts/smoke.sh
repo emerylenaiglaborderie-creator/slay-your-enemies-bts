@@ -120,4 +120,17 @@ check "PUT objectif valide" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{"
 check "objectif modifié" "$(plans_bob)" "reseau:null,sql:12"
 check "DELETE objectif" "$(status DELETE "/grades/$G_ID/recovery-goal" "$T")" 204
 check "plan sans objectif après retrait" "$(plans_bob)" "reseau:null,sql:null"
+
+# Durée personnalisée du plan de rattrapage (recovery_goals.days)
+check "durée 0 refusée" "$(status POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"web\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$B_ID\",\"value\":5,\"recovery_days\":0}]}")" 400
+check "durée de plus d'un an refusée" "$(status POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"web\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$B_ID\",\"value\":5,\"recovery_days\":366}]}")" 400
+check "durée sur une note sans plan refusée" "$(status POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"web\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$A_ID\",\"value\":12,\"recovery_days\":30}]}")" 400
+call POST "/classes/$CLASS_ID/grades" "$T" "{\"subject\":\"web\",\"graded_on\":\"$TODAY\",\"entries\":[{\"student_id\":\"$B_ID\",\"value\":5,\"recovery_target\":10,\"recovery_days\":30}]}" >/dev/null
+IN30=$(date -v+30d +%F 2>/dev/null || date -d '+30 days' +%F)
+check "plan de 30 jours" "$(call GET "/classes/$CLASS_ID/dashboard" "$T" | jq -r '.students[] | select(.display_name=="Bob") | .recovery_plans[] | select(.subject=="web") | "\(.until),\(.days),\(.target)"')" "$IN30,30,10"
+check "PUT sans objectif ni durée refusé" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{}')" 400
+check "PUT durée 0 refusée" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{"days":0}')" 400
+check "PUT durée seule" "$(status PUT "/grades/$G_ID/recovery-goal" "$T" '{"days":7}')" 204
+IN7=$(date -v+7d +%F 2>/dev/null || date -d '+7 days' +%F)
+check "plan raccourci à 7 jours, sans objectif" "$(call GET /me/grades "$B" | jq -r '.recovery_plans[] | select(.subject=="sql") | "\(.until),\(.days),\(.target)"')" "$IN7,7,null"
 echo "Scénario complet : OK"
