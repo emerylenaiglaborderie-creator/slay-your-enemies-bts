@@ -114,7 +114,7 @@ Le défi passe automatiquement à `completed` quand les deux participants ont te
 | Méthode | Route | Détail |
 |---|---|---|
 | POST | `/classes/{id}/grades` **F** | Saisie groupée, voir ci-dessous → `[{ id, student_id, outcome: bonus\|recovery\|saved, xp_bonus }]` |
-| GET | `/classes/{id}/grades` **F** | Notes de la classe, avec nom de l'élève et de l'évaluation |
+| GET | `/classes/{id}/grades` **F** | Notes de la classe, avec nom de l'élève et de l'évaluation, et `recovery_target`, `recovery_days` (réglages du plan ouvert par la note, ou `null`) |
 | DELETE | `/grades/{id}` **F** | L'XP déjà gagnée reste acquise |
 | PUT | `/grades/{id}/recovery-goal` **F** | Corps `{ "target": 8, "days": 21 }`, chacun facultatif mais au moins l'un des deux → 204. Remplace l'objectif et la durée du plan ouvert par cette note (une valeur absente est effacée). 400 si `target <= 0`, si `days` hors de 1 à 365, ou si la note n'est pas sous 10/20 |
 | DELETE | `/grades/{id}/recovery-goal` **F** | Retire objectif et durée : plan de 14 jours sans objectif → 204 |
